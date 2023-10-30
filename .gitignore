@@ -951,3 +951,7 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm,pycharm+all,pycharm+iml,visualstudiocode,visualstudio,vim,emacs,macos,windows,linux
+
+#### Custom
+
+data/
