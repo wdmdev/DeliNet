@@ -1,5 +1,5 @@
 # DeliNet
-Deeplearning project for image2text conversion for images of Danish open-faced sandwiches to textual recipes.
+Deeplearning project for image2text conversion for images of food to textual recipes.
 
 ## Data
 * The Kaggle `Food Ingredients and Recipes Dataset with Images`
