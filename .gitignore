@@ -954,5 +954,6 @@ FodyWeavers.xsd
 
 #### Custom
 
+models/
 data/
 !src/data
