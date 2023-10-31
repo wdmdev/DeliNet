@@ -38,3 +38,4 @@ Deeplearning project for image2text conversion for images of Danish open-faced s
 │   └── visualization  <- Scripts to create exploratory and results oriented visualizations
 │       └── visualize.py
 ```
+**NB the folders `data` and `models` in the root folder are gitignored and should only be held locally to avoid pushing large files with `git`**
