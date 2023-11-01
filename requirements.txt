@@ -2,3 +2,6 @@ pillow
 torch
 clip
 transformers
+hydra-core
+pandas
+torchvision
