@@ -1,6 +1,10 @@
 # DeliNet
 Deeplearning project for image2text conversion for images of food to textual recipes.
 
+## Data
+* The Kaggle `Food Ingredients and Recipes Dataset with Images`
+    * [Download here](https://www.kaggle.com/datasets/pes12017000148/food-ingredients-and-recipe-dataset-with-images)
+
 
 ## Project Structure
 ```

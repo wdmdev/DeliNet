@@ -958,3 +958,4 @@ models/
 data/
 !src/data
 src/data/archive/
+!src/models
