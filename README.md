@@ -12,7 +12,7 @@ To do this perform the following steps:
 2. Run the command `make prepare_kaggle_food_data`
 
 Then you're good to go.
-The raw data will be kept but renamed from `archive.zip` to `KaggleFoodDataset.zip` and the preprocessed data will be placed in `data/preprocessed/KaggleFoodDataset`.
+The raw data will be kept but renamed from `archive.zip` to `KaggleFoodDataset.zip` and the preprocessed data will be placed in `data/processed/KaggleFoodDataset`.
 
 ## Project Structure
 ```
