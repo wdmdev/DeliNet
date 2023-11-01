@@ -957,6 +957,8 @@ FodyWeavers.xsd
 models/
 data/
 !src/data
+src/data/archive/
+src/data/raw
 !src/models
 !config/models
 src/data/archive/
