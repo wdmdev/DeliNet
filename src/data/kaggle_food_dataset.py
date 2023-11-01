@@ -39,7 +39,7 @@ class KaggleFoodDataset(Dataset):
 if __name__ == '__main__':
     # Create the dataset and dataloader using the new class
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    food_dir = os.path.join(current_dir,'..','..','data','raw','FoodDataset')
+    food_dir = os.path.join(current_dir,'..','..','data','processed','KaggleFoodDataset')
     csv_file_path = os.path.join(food_dir, 'data.csv')
     image_dir = os.path.join(food_dir,'images')
 
