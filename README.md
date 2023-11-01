@@ -5,6 +5,14 @@ Deeplearning project for image2text conversion for images of food to textual rec
 * The Kaggle `Food Ingredients and Recipes Dataset with Images`
     * [Download here](https://www.kaggle.com/datasets/pes12017000148/food-ingredients-and-recipe-dataset-with-images)
 
+### Data Preprocessing
+After downloading the Kaggle `Food Ingredients and Recipes Dataset with Images` we need it to be processed to fit our dataloader.
+To do this perform the following steps:
+1. Save the `archive.zip` file that you have downloaded with the Kaggle `Food Ingredients and Recipes Dataset with Images` in the project folder `data/raw`
+2. Run the command `make prepare_kaggle_food_data`
+
+Then you're good to go.
+The raw data will be kept but renamed from `archive.zip` to `KaggleFoodDataset.zip` and the preprocessed data will be placed in `data/preprocessed/KaggleFoodDataset`.
 
 ## Project Structure
 ```
