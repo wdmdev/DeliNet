@@ -36,7 +36,7 @@ class KaggleFoodDataset(Dataset):
         return image, recipe_title
 
 
-if __name__ == '__main__':
+def test():
     # Create the dataset and dataloader using the new class
     current_dir = os.path.dirname(os.path.abspath(__file__))
     food_dir = os.path.join(current_dir,'..','..','data','processed','KaggleFoodDataset')
@@ -57,3 +57,7 @@ if __name__ == '__main__':
     print(f'Recipe titles: {batch_recipe_titles}')
     print(f'Type of recipe titles: {type(batch_recipe_titles)}')
     print(f'Type of recipe titles element: {type(batch_recipe_titles[0])}')
+
+
+if __name__ == '__main__':
+    test()

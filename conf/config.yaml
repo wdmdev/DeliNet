@@ -1,0 +1,3 @@
+defaults:
+  - model: CLIP1
+  - data: kaggle_food_data
