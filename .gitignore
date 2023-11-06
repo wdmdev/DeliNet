@@ -962,3 +962,5 @@ src/data/raw
 !src/models
 !config/models
 src/data/archive/
+error*.err
+output*.out

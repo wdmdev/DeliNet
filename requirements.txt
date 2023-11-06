@@ -6,3 +6,5 @@ pandas
 torchvision
 omegaconf
 clip-openai
+lightning
+dvclive

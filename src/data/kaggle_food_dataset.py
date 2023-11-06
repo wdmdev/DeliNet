@@ -21,7 +21,9 @@ class KaggleFoodDataset(Dataset):
 
     def __getitem__(self, idx):
         img_name = os.path.join(self.image_dir, self.food_data.iloc[idx, 4] + ".jpg")
-        image = Image.open(img_name)
+        image = Image.open(img_name).convert('RGB')
+        # Resize images to ensure same dimensions, 224 because many models are pretrained on that
+        image = transforms.Resize((224,224))(image)
 
         if self.transform:
             image = self.transform(image)
