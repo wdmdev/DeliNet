@@ -15,9 +15,9 @@ local_env:
 	@source env/bin/activate; \
 	python3 -m pip install -r requirements.txt
 
-pretrained_CLIP:
+finetune_CLIP:
 	@source env/bin/activate; \
-	python3 src/models/pretrained_CLIP.py
+	python3 -m src.models.finetune_CLIP
 
 
 prepare_kaggle_food_data:

@@ -1,7 +1,10 @@
 pillow
 torch
-clip
 transformers
 hydra-core
 pandas
 torchvision
+omegaconf
+clip-openai
+lightning
+dvclive
