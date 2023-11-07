@@ -1,102 +1,137 @@
 import torch
 from torch import nn
-from model_utils import DoubleConv, Down, SelfAttention, pos_encoding
 import torch.nn.functional as f
 
-class Image_encoder_baseline(torch.nn.Module):
-    def __init__(self, img_size=16, c_in=3, latent_dim=5, time_dim=256, channels=32):
+
+class ViT_wrapper(torch.nn.Module):
+    def __init__(self, ViTModel, ViTImageProcessor, latent_dim=768, d="cuda"):
         super().__init__()
+        self.d = d
         self.latent_dim = latent_dim
-        self.time_dim = time_dim
-        self.inc = DoubleConv(c_in, channels)
-        self.down1 = Down(channels, channels * 2, emb_dim=time_dim)
-        self.sa1 = SelfAttention(channels * 2, img_size // 2)
-        self.down2 = Down(channels * 2, channels * 4, emb_dim=time_dim)
+        self.ViTModel = ViTModel
+        self.ViTImageProcessor = ViTImageProcessor
+        self.fc = torch.nn.Linear(latent_dim, latent_dim)
 
-        self.sa2 = SelfAttention(channels * 4, img_size // 4)
-        self.down3 = Down(channels * 4, channels * 4, emb_dim=time_dim)
-        self.sa3 = SelfAttention(channels * 4, img_size // 8)
+    def forward(self, images):
+        preprocessed = self.ViTImageProcessor(images=images, return_tensors="pt").to(self.d)
+        output = self.ViTModel(**preprocessed)
+        cls_token = output.pooler_output
+        out = self.fc(cls_token)
 
-        self.bot1 = DoubleConv(channels * 4, channels * 8)
-        self.bot2 = DoubleConv(channels * 8, channels * 8)
-        #self.bot3 = DoubleConv(channels * 8, channels * 4)
-        self.MLP1 = nn.Linear(int((16 * 3 * 32 + self.time_dim * 2) / 2), int((16 * 3 * 32 + self.time_dim * 2) / 4))
-        self.MLP2_out = nn.Linear(int((16 * 3 * 32 + self.time_dim * 2) / 4), self.latent_dim)
+        return out
 
-    def forward(self, x, t=None):
-        # t will always be None
-        #t = t.unsqueeze(-1).type(torch.float)
-        #t = pos_encoding(t, self.time_dim, self.device)
+class Bert_wrapper(torch.nn.Module):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=16):
+        super().__init__()
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertModel = BertModel
+        self.BertTokenizer = BertTokenizer
+        self.fc = torch.nn.Linear(latent_dim, latent_dim)
 
-        print(x.shape)
-        x = self.inc(x)
-        print(x.shape)
-        x = self.down1(x, t)
-        print(x.shape)
-        x = self.sa1(x)
-        print(x.shape)
-        x = self.down2(x, t)
-        print(x.shape)
-        x = self.sa2(x)
-        print(x.shape)
-        x = self.down3(x, t)
-        print(x.shape)
-        x = self.sa3(x)
-        print(x.shape)
-        x = self.bot1(x)
-        print(x.shape)
-        x = self.bot2(x)
-        print(x.shape)
-        # x = self.bot3(x)
-        x = x.flatten(start_dim=1)
-        print(x.shape)
-        x = f.relu(self.MLP1(x))
-        print(x.shape)
-        out = self.MLP2_out(x)
-        print(out.shape)
+    def forward(self, text):
+        preprocessed = self.BertTokenizer(text=text,
+                                          padding=True,
+                                          truncation=True,
+                                          max_length=self.max_length,
+                                          return_tensors="pt").to(self.d)
+
+        output = self.BertModel(**preprocessed)
+        cls_token = output.pooler_output
+        out = self.fc(cls_token)
 
         return out
 
 
+
 if __name__ == "__main__":
-    if torch.cuda.is_available():
-        torch.set_default_device("cuda")
-    else:
-        torch.set_default_device("cpu")
+    # if torch.cuda.is_available():
+    #     torch.set_default_device("cuda")
+    # else:
+    #     torch.set_default_device("cpu")
+    device = "cuda"
 
-    import sys
-    import os
-    #sys.path.append(r"../../")
-    #sys.path.append(r"C:\Users\karl\Desktop\DeliNet")
-    #for path in sys.path: print(path)
     from torch.utils.data import DataLoader
-    #sys.path.append("..")
-
-    #from ..data.kaggle_food_dataset import KaggleFoodDataset
     from src.data.kaggle_food_dataset import *
-    #KaggleFoodDataset()
     current_dir = os.path.dirname(os.path.abspath(__file__))
     food_dir = os.path.join(current_dir,'..','..','data','processed','KaggleFoodDataset')
     csv_file_path = os.path.join(food_dir, 'data.csv')
     image_dir = os.path.join(food_dir,'images')
 
-    batch_size = 1
+    batch_size = 16
     food_dataset_batched = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir)
     food_dataloader_batched = DataLoader(food_dataset_batched, batch_size=batch_size, shuffle=True)
 
-    # Test the DataLoader by fetching one batch of data
     batch_images, batch_recipe_titles = next(iter(food_dataloader_batched))
 
-    img_size = int(128*2)
-    t = torch.randn((batch_size, 3, img_size, img_size), dtype=torch.float)
-    model = Image_encoder_baseline(img_size=img_size)
-    with torch.no_grad():
-        model(t)
-
-    def some_func(some_int: int) -> float:
-        return float(some_int)
-
-    some_func(1.0)
+    from transformers import BertTokenizer, BertModel, ViTImageProcessor, ViTModel
 
 
-    #iter(next(KaggleFoodDataset()))
+    ViTImageProcessor_ = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
+    ViTModel_ = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
+    vision_model = ViT_wrapper(ViTModel_, ViTImageProcessor_).to("cuda")
+    #vision_model(batch_images)
+
+
+    BertModel_ = BertModel.from_pretrained("bert-base-uncased")
+    BertTokenizer_ = BertTokenizer.from_pretrained('bert-base-uncased')
+    text_model = Bert_wrapper(BertModel_, BertTokenizer_).to("cuda")
+    batch_recipe_titles = list(batch_recipe_titles[0])
+    #text_model(batch_recipe_titles)
+
+
+    print(torch.empty(3, dtype=torch.long).random_(5))
+    import tqdm
+
+    labels = torch.arange(batch_size).to(device)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    lr = 1e-4
+    opt_vision = torch.optim.AdamW(lr=lr, params=vision_model.parameters())
+    opt_text = torch.optim.AdamW(lr=lr, params=text_model.parameters())
+
+    for batch_images, batch_recipe_titles in tqdm.tqdm(food_dataloader_batched):
+
+        batch_recipe_titles = list(batch_recipe_titles[0])
+
+        text_latent = vision_model(batch_images)
+        img_latent = text_model(batch_recipe_titles)
+
+        text_latent = torch.linalg.norm(text_latent, axis=1)
+        img_latent = torch.linalg.norm(img_latent, axis=1)
+
+        logits = text_latent @ img_latent.T
+
+        loss_i = loss_fn(logits, labels)
+        loss_t = loss_fn(logits.T, labels)
+        loss = (loss_i + loss_t) / 2.0
+
+        opt_vision.zero_grad()
+        opt_text.zero_grad()
+
+        loss.backward()
+
+        opt_vision.step()
+        opt_text.step()
+
+
+
+
+
+            # I_e = l2_normalize(np.dot(I_f, W_i), axis=1)
+            # T_e = l2_normalize(np.dot(T_f, W_t), axis=1)
+            # # scaled pairwise cosine similarities [n, n]
+            # logits = np.dot(I_e, T_e.T) * np.exp(t)
+            # # symmetric loss function
+            # labels = np.arange(n)
+            # loss_i = cross_entropy_loss(logits, labels, axis=0)
+            # loss_t = cross_entropy_loss(logits, labels, axis=1)
+            # loss = (loss_i + loss_t) / 2
+
+        #
+        # except Exception:
+        #     print("#NAME?.jpg fuckery")
+
+
+
+
