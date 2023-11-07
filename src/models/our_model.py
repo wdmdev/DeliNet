@@ -97,8 +97,8 @@ if __name__ == "__main__":
         text_latent = vision_model(batch_images)
         img_latent = text_model(batch_recipe_titles)
 
-        text_latent = torch.linalg.norm(text_latent, axis=1)
-        img_latent = torch.linalg.norm(img_latent, axis=1)
+        text_latent = text_latent / torch.linalg.norm(text_latent, axis=1)
+        img_latent = img_latent / torch.linalg.norm(img_latent, axis=1)
 
         logits = text_latent @ img_latent.T
 
