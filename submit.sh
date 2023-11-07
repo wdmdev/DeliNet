@@ -8,7 +8,7 @@
 ### -- Specify that the process should be run exclusively on a gpu
 #BSUB -gpu "num=1:mode=exclusive_process"
 ### -- set the job Name --
-#BSUB -J CLIP 
+#BSUB -J finetune 
 ### -- set walltime limit: hh:mm --  maximum 24 hours for GPU-queues right now
 #BSUB -W 10:00
 # request 15GB of system-memory
@@ -27,3 +27,4 @@
 source env/bin/activate
 
 python3 -m src.models.finetune_CLIP
+# python3 -m src.models.CLIP_vectorize

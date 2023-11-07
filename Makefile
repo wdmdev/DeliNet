@@ -19,6 +19,10 @@ finetune_CLIP:
 	@source env/bin/activate; \
 	python3 -m src.models.finetune_CLIP
 
+predict_CLIP:
+	@source env/bin/activate; \
+	python3 -m src.models.predict_CLIP
+
 
 prepare_kaggle_food_data:
 	@echo "Step 1: Check if archive.zip exists in data/raw"

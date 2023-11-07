@@ -1,18 +1,19 @@
 import os
 
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
 import clip
-from src.data.kaggle_food_dataset import KaggleFoodDataset
+from src.data.CLIP_kaggle_food_dataset import KaggleFoodDataset
 
 import hydra
 from omegaconf import DictConfig
 
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint
+from transformers import CLIPModel
 
 from dvclive.lightning import DVCLiveLogger
 
@@ -22,31 +23,59 @@ class CLIPFineTuned(L.LightningModule):
         self.model = model
         self.preprocess = preprocess
         self.cfg = cfg
+        self.automatic_optimization = False #set for gradient accumulation
 
     def forward(self, images, texts):
         return self.model(images, texts)
 
     def training_step(self, batch, batch_idx):
+        opt = self.optimizers()
         images, texts = batch
-        texts = [str(t) for t in texts[0]]
-        texts = clip.tokenize(texts).to(self.device, non_blocking=True)
-        images = [transforms.ToPILImage()(image) for image in images]
-        images = torch.stack([self.preprocess(image).to(self.device, non_blocking=True) for image in images])
+        images = images.to(self.device)
+        texts = texts.to(self.device)
 
-        loss_img = nn.CrossEntropyLoss()
-        loss_txt = nn.CrossEntropyLoss()
+        max_batch_size = self.cfg.model.train.max_batch_part_size
+        num_images = images.size(0)
+        num_splits = (num_images + max_batch_size - 1) // max_batch_size
 
-        logits_per_image, logits_per_text = self.model(images, texts)
-        ground_truth = torch.arange(images.size(0), dtype=torch.long, device=self.device)
-        img_loss = loss_img(logits_per_image, ground_truth)
-        txt_loss = loss_txt(logits_per_text, ground_truth)
-        total_loss = (img_loss + txt_loss) / 2
+        total_loss_i = 0
+        total_loss_t = 0
 
-        self.log("train_img_loss", img_loss, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
-        self.log("train_txt_loss", txt_loss, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
-        self.log("train_loss", total_loss, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
+        for i in range(num_splits):
+            start = i * max_batch_size
+            end = min(start + max_batch_size, num_images)
 
-        return total_loss
+            batch_images = images[start:end]
+            batch_texts = texts[start:end]
+
+            #cosine similarity as logits
+            logits_image, logits_text = self.model(batch_images, batch_texts)
+
+            # symmetric loss function
+            ground_truth = torch.arange(batch_images.size(0), dtype=torch.long, device=self.device)
+            loss_i = F.cross_entropy(logits_image, ground_truth)
+            loss_t = F.cross_entropy(logits_text, ground_truth)
+            total_loss_i += loss_i
+            total_loss_t += loss_t
+
+            # Backward pass
+            loss = (loss_i + loss_t) / 2
+            self.manual_backward(loss)
+        
+            # Update parameters every num_splits batches
+            if (i + 1) % num_splits == 0:
+                opt.step()
+                opt.zero_grad()
+
+        avg_loss_i = total_loss_i / num_splits
+        avg_loss_t = total_loss_t / num_splits
+        avg_loss = (avg_loss_i + avg_loss_t) / 2
+
+        self.log("train_img_loss", avg_loss_i, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
+        self.log("train_txt_loss", avg_loss_t, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
+        self.log("train_loss", avg_loss, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
+
+        return avg_loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), **self.cfg.model.optimizer)
@@ -56,15 +85,19 @@ class CLIPFineTuned(L.LightningModule):
 @hydra.main(version_base=None, config_path=os.path.join('..', '..', 'conf'), config_name='config')
 def finetune_model(cfg: DictConfig):
     # Load the CLIP model and processor
-    # model = CLIPModel.from_pretrained(cfg.model.path)
     device = "cuda" if torch.cuda.is_available() else "cpu" 
     model, preprocess = clip.load(cfg.model.load, device=device, jit=False)
 
     if device == "cpu":
       model.float()
 
-    # Create dataset and dataloader
-    transform = transforms.ToTensor()
+    def transform(img):
+        img = img.convert("RGB")
+        img = transforms.Resize((224,224))(img)
+        img = preprocess(img)
+
+        return img
+
     dataset = KaggleFoodDataset(csv_file=cfg.data.processed.csv, 
                                 image_dir=cfg.data.processed.img, transform=transform)
     train_dataloader = DataLoader(dataset, batch_size=cfg.model.train.batch_size, 
