@@ -7,7 +7,7 @@ save_dir: models/CLIP1
 
 train:
   epochs: 30
-  batch_size: 500
+  batch_size: 300
 
 optimizer:
   lr: 5.e-5

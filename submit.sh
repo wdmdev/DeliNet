@@ -11,8 +11,8 @@
 #BSUB -J CLIP 
 ### -- set walltime limit: hh:mm --  maximum 24 hours for GPU-queues right now
 #BSUB -W 10:00
-# request 32GB of system-memory
-#BSUB -R "rusage[mem=32GB]"
+# request 15GB of system-memory
+#BSUB -R "rusage[mem=15GB]"
 ### User email address
 #BSUB -u s183921@student.dtu.dk
 ### -- send notification at completion--

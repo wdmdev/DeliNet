@@ -6,7 +6,6 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 
 import clip
-from transformers import CLIPModel
 from src.data.kaggle_food_dataset import KaggleFoodDataset
 
 import hydra
@@ -15,11 +14,10 @@ from omegaconf import DictConfig
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint
 
-from dvclive import Live
 from dvclive.lightning import DVCLiveLogger
 
-class CLIPFineTuner(L.LightningModule):
-    def __init__(self, model, preprocess, cfg):
+class CLIPFineTuned(L.LightningModule):
+    def __init__(self, model=None, preprocess=None, cfg=None):
         super().__init__()
         self.model = model
         self.preprocess = preprocess
@@ -58,7 +56,7 @@ class CLIPFineTuner(L.LightningModule):
 @hydra.main(version_base=None, config_path=os.path.join('..', '..', 'conf'), config_name='config')
 def finetune_model(cfg: DictConfig):
     # Load the CLIP model and processor
-    model = CLIPModel.from_pretrained(cfg.model.path)
+    # model = CLIPModel.from_pretrained(cfg.model.path)
     device = "cuda" if torch.cuda.is_available() else "cpu" 
     model, preprocess = clip.load(cfg.model.load, device=device, jit=False)
 
@@ -74,7 +72,7 @@ def finetune_model(cfg: DictConfig):
 
     # Create a PyTorch Lightning module
     L.seed_everything(42, workers=True)
-    model = CLIPFineTuner(model, preprocess, cfg)
+    model = CLIPFineTuned(model, preprocess, cfg)
 
     # Create a PyTorch Lightning trainer and start training with DVC logging
     logger = DVCLiveLogger(save_dvc_exp=True)
@@ -84,7 +82,6 @@ def finetune_model(cfg: DictConfig):
                             deterministic=True, logger=logger,
                             callbacks=[checkpoint_callback])
     trainer.fit(model, train_dataloader)
-    trainer.save_
 
 if __name__ == '__main__':
     finetune_model()
