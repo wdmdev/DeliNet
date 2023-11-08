@@ -6,8 +6,10 @@ load: ViT-B/32
 save_dir: models/CLIP1
 
 train:
-  epochs: 30
-  batch_size: 300
+  epochs: 100
+  batch_size: 1000
+  max_batch_part_size: 100
+  t_scale: 2.6592
 
 optimizer:
   lr: 5.e-5

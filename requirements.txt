@@ -8,3 +8,4 @@ omegaconf
 clip-openai
 lightning
 dvclive
+scikit-learn
