@@ -29,6 +29,7 @@ class Bert_wrapper(torch.nn.Module):
         self.BertModel = BertModel
         self.BertTokenizer = BertTokenizer
         self.fc = torch.nn.Linear(latent_dim, latent_dim)
+        self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
 
     def forward(self, text):
         preprocessed = self.BertTokenizer(text=text,
@@ -50,7 +51,7 @@ if __name__ == "__main__":
     #     torch.set_default_device("cuda")
     # else:
     #     torch.set_default_device("cpu")
-    device = "cuda"
+    d = "cpu"
 
     from torch.utils.data import DataLoader
     from src.data.kaggle_food_dataset import *
@@ -59,32 +60,36 @@ if __name__ == "__main__":
     csv_file_path = os.path.join(food_dir, 'data.csv')
     image_dir = os.path.join(food_dir,'images')
 
-    batch_size = 16
+    batch_size = 3
     food_dataset_batched = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir)
     food_dataloader_batched = DataLoader(food_dataset_batched, batch_size=batch_size, shuffle=True)
 
     batch_images, batch_recipe_titles = next(iter(food_dataloader_batched))
 
-    from transformers import BertTokenizer, BertModel, ViTImageProcessor, ViTModel
+
+    from transformers import BertTokenizer, BertModel, AutoImageProcessor, ViTMAEModel, ViTImageProcessor, ViTModel
 
 
-    ViTImageProcessor_ = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
-    ViTModel_ = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
-    vision_model = ViT_wrapper(ViTModel_, ViTImageProcessor_).to("cuda")
+    #ViTImageProcessor_ = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
+    #ViTModel_ = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
+    #vision_model = ViT_wrapper(ViTModel_, ViTImageProcessor_, d=d).to(d)
+    ViTImageProcessor_ = AutoImageProcessor.from_pretrained("facebook/vit-mae-base")
+    ViTModel_ = ViTMAEModel.from_pretrained("facebook/vit-mae-base")
+    vision_model = ViT_wrapper(ViTModel_, ViTImageProcessor_, d=d).to(d)
     #vision_model(batch_images)
 
 
     BertModel_ = BertModel.from_pretrained("bert-base-uncased")
     BertTokenizer_ = BertTokenizer.from_pretrained('bert-base-uncased')
-    text_model = Bert_wrapper(BertModel_, BertTokenizer_).to("cuda")
-    batch_recipe_titles = list(batch_recipe_titles[0])
+    text_model = Bert_wrapper(BertModel_, BertTokenizer_, d=d).to(d)
+    #batch_recipe_titles = list(batch_recipe_titles[0])
     #text_model(batch_recipe_titles)
 
 
     print(torch.empty(3, dtype=torch.long).random_(5))
     import tqdm
 
-    labels = torch.arange(batch_size).to(device)
+    labels = torch.arange(batch_size).to(d)
     loss_fn = torch.nn.CrossEntropyLoss()
     lr = 1e-4
     opt_vision = torch.optim.AdamW(lr=lr, params=vision_model.parameters())
@@ -92,15 +97,15 @@ if __name__ == "__main__":
 
     for batch_images, batch_recipe_titles in tqdm.tqdm(food_dataloader_batched):
 
-        batch_recipe_titles = list(batch_recipe_titles[0])
+        #batch_recipe_titles = list(batch_recipe_titles[0])
 
         text_latent = vision_model(batch_images)
         img_latent = text_model(batch_recipe_titles)
 
-        text_latent = text_latent / torch.linalg.norm(text_latent, axis=1)
-        img_latent = img_latent / torch.linalg.norm(img_latent, axis=1)
+        text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
+        img_latent = img_latent / torch.linalg.norm(img_latent, axis=1, keepdim=True)
 
-        logits = text_latent @ img_latent.T
+        logits = (text_latent @ img_latent.T) * torch.exp(text_model.t)
 
         loss_i = loss_fn(logits, labels)
         loss_t = loss_fn(logits.T, labels)

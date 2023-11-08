@@ -33,7 +33,7 @@ class KaggleFoodDataset(Dataset):
         #     'ingredients': [self.food_data.iloc[idx, 2]],
         #     'instructions': [self.food_data.iloc[idx, 3]]
         # }
-        recipe_title = [self.food_data.iloc[idx, 1]]
+        recipe_title = self.food_data.iloc[idx, 1]
 
         return image, recipe_title
 
