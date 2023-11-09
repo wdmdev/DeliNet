@@ -14,21 +14,21 @@ def get_top_x_acc(logits:torch.tensor,
         text_model.eval()
         #todo this might run of out GPU memory for large testsets but atleast its fast. maybe
         if test_loader is not None:
-            img_logits = []
-            text_logits = []
+            img_embs = []
+            text_embs = []
             for image, text in tqdm.tqdm(test_loader):
-                image_encoding = vision_model(image.to(d))
-                text_encoding = text_model(text)
-                img_logits.append(image_encoding)
-                text_logits.append(text_encoding)
+                img_emb = vision_model(image.to(d))
+                text_emb = text_model(text)
+                img_embs.append(img_emb)
+                text_embs.append(text_emb)
 
-            img_logits = torch.cat(img_logits, dim=0)
-            text_logits = torch.cat(text_logits, dim=0)
+            img_embs = torch.cat(img_embs, dim=0)
+            text_embs = torch.cat(text_embs, dim=0)
 
-            img_logits = img_logits / torch.linalg.norm(img_logits, axis=1, keepdim=True)
-            text_logits = text_logits / torch.linalg.norm(text_logits, axis=1, keepdim=True)
+            img_embs = img_embs / torch.linalg.norm(img_embs, axis=1, keepdim=True)
+            text_embs = text_embs / torch.linalg.norm(text_embs, axis=1, keepdim=True)
 
-            logits = text_logits @ img_logits.T
+            logits = text_embs @ img_embs.T
 
         n = logits.shape[0]
         accs = []
