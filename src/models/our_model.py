@@ -1,15 +1,17 @@
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as f
 import tqdm
 import matplotlib.pyplot as plt
+plt.style.use("ggplot")
 
 class ResNet_wrapper(torch.nn.Module):
-    def __init__(self, model, latent_dim=768, d="cuda"):
+    def __init__(self, ResNet, latent_dim=768, d="cuda"):
         super().__init__()
         self.d = d
         self.latent_dim = latent_dim
-        self.model = model
+        self.model = ResNet
         self.activation = torch.nn.ReLU()
 
         if self.model.name_or_path.endswith(str(50)):
@@ -26,26 +28,23 @@ class ResNet_wrapper(torch.nn.Module):
         return out
 
 class ViT_wrapper(torch.nn.Module):
-    def __init__(self, ViTModel, ViTImageProcessor, latent_dim=768, d="cuda"):
+    def __init__(self, ViT, latent_dim=768, d="cuda"):
         super().__init__()
         self.d = d
         self.latent_dim = latent_dim
-        self.ViTModel = ViTModel
-        self.ViTImageProcessor = ViTImageProcessor
+        self.model = ViT
         self.activation = torch.nn.GELU()
         self.fc = torch.nn.Linear(latent_dim, latent_dim)
 
     def forward(self, images):
-        #preprocessed = self.ViTImageProcessor(images=images, return_tensors="pt", do_rescale=False).to(self.d)
-        #output = self.ViTModel(**preprocessed)
-        output = self.ViTModel(images)
+        output = self.model(images)
         cls_token = output.pooler_output
-        out = self.fc(self.activation(cls_token))
+        #out = self.fc(self.activation(cls_token))
 
-        return out
+        return cls_token
 
 class Bert_wrapper(torch.nn.Module):
-    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=16):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=32):
         super().__init__()
         self.d = d
         self.max_length = max_length
@@ -72,56 +71,58 @@ class Bert_wrapper(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    # if torch.cuda.is_available():
-    #     torch.set_default_device("cuda")
-    # else:
-    #     torch.set_default_device("cpu")
-    d = "cuda"
-
     from torch.utils.data import DataLoader
     from src.data.our_kaggle_food_dataset import *
+    from src.evaluation.get_top_x_acc import get_top_x_acc
     current_dir = os.path.dirname(os.path.abspath(__file__))
     food_dir = os.path.join(current_dir,'..','..','data','processed','KaggleFoodDataset')
     csv_file_path = os.path.join(food_dir, 'data.csv')
     image_dir = os.path.join(food_dir,'images')
 
+    d = "cuda"
     preprocess = transforms.Compose([
-        #transforms.Resize((224,224)),
-        transforms.CenterCrop(224),
+        transforms.Resize((224,224)),
+        #transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
-    batch_size = 44 #200 is max for resnet18, 80 is max for resnet50, 44 is max for ViT
-    food_dataset_batched = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir, transform=preprocess)
-    food_dataloader_batched = DataLoader(food_dataset_batched, batch_size=batch_size, shuffle=True)
+    batch_size = 75 #200 is max for resnet18, 80 is max for resnet50, 44 is max for ViT
+    food_dataset_train = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
+                                           transform=preprocess, train=True, train_split=0.9)
+    food_dataset_test = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
+                                           transform=preprocess, train=False, train_split=0.9)
 
-    batch_images, batch_recipe_titles = next(iter(food_dataloader_batched))
 
+    dataloader_train = DataLoader(food_dataset_train, batch_size=batch_size, shuffle=True)
+    dataloader_test= DataLoader(food_dataset_test, batch_size=batch_size, shuffle=False)
 
     from transformers import BertTokenizer, BertModel, ViTModel, AutoImageProcessor
-
-    # ViTImageProcessor_ = AutoImageProcessor.from_pretrained("facebook/vit-mae-base")# uses same as resnet!
+    # ViTImageProcessor_ = AutoImageProcessor.from_pretrained("facebook/vit-mae-base")# uses same preprocess as resnet!
     ViTModel_ = ViTModel.from_pretrained("facebook/vit-mae-base")
-    vision_model = ViT_wrapper(ViTModel_, None, d=d).to(d)
+    vision_model = ViT_wrapper(ViTModel_, d=d).to(d)
     # #vision_model(batch_images)
 
     BertModel_ = BertModel.from_pretrained("bert-base-uncased")
     BertTokenizer_ = BertTokenizer.from_pretrained('bert-base-uncased')
     text_model = Bert_wrapper(BertModel_, BertTokenizer_, d=d).to(d)
 
-    # from transformers import ResNetModel
-    # ResNet = ResNetModel.from_pretrained("microsoft/resnet-50")
-    # vision_model = ResNet_wrapper(ResNet, d=d).to(d)
+    from transformers import ResNetModel
+    ResNet = ResNetModel.from_pretrained("microsoft/resnet-50")
+    vision_model = ResNet_wrapper(ResNet, d=d).to(d)
 
     loss_fn = torch.nn.CrossEntropyLoss()
-    lr = 0.00003 # 0.00003 for Vit (since smaller batchsize) 0.0001 for resnet
+    lr = 0.0001 * (batch_size / 75) # 0.00003 for Vit (since smaller batchsize) 0.0001 for resnet
     opt_vision = torch.optim.AdamW(lr=lr, params=vision_model.parameters())
     opt_text = torch.optim.AdamW(lr=lr, params=text_model.parameters())
 
     losses = []
+    top_x_acc_list = []
+    num_steps = []
 
     for epoch_num in range(100):
-        for batch_num, (batch_images, batch_recipe_titles) in enumerate(tqdm.tqdm(food_dataloader_batched)):
+        vision_model.train()
+        text_model.train()
+        for batch_num, (batch_images, batch_recipe_titles) in enumerate(tqdm.tqdm(dataloader_train)):
             labels = torch.arange(batch_images.shape[0], device=d)
             batch_images = batch_images.to(torch.float32).to(d)
 
@@ -145,15 +146,30 @@ if __name__ == "__main__":
             opt_text.step()
 
             losses.append(loss.detach())
+            # if batch_num == 0:
+            #     print(f"\nacc of batch 0 of epoch {epoch_num}: "
+            #           f"{((torch.argmax(logits, dim=0) == labels).sum() / batch_size).item():.3f}"
+            #           f" (random is {1/batch_size:.3f})")
 
-            if batch_num == 0:
-                print(f"\nacc of batch 0 of epoch {epoch_num}: "
-                      f"{((torch.argmax(logits, dim=0) == labels).sum() / batch_size).item():.3f}"
-                      f" (random is {1/batch_size:.3f})")
-
+        top_x_percent = [0, 0.10, 0.25]
+        top_x_acc = get_top_x_acc(logits=None, top_x_percent = top_x_percent, test_loader=dataloader_test,
+                                  text_model=text_model, vision_model=vision_model, d=d)
+        top_x_acc_list.append(top_x_acc)
+        print("top x test acc", *zip(top_x_percent, top_x_acc))
         losses = losses[:-1] # final loss is kinda broken due to smaller batchsize
+        num_steps.append(len(losses)-1)
 
-        plt.plot(torch.stack(losses).cpu().numpy())
+        top_x_acc_array = np.asarray(top_x_acc_list).T
+        for i in range(len(top_x_percent)):
+            plt.plot(num_steps, top_x_acc_array[i],
+                     label=f"top {int(top_x_percent[i]*100)}% acc = {top_x_acc_array[i][-1]:.3f}")
+        losses_numpy = torch.stack(losses).cpu().numpy()
+        plt.plot(losses_numpy/losses_numpy.max(), label="train loss (normalized)")
+        plt.legend()
+        plt.title(f"{vision_model.model.name_or_path} - epoch {epoch_num+1} ")
+        plt.xlabel("steps")
+        plt.ylabel("acc/ normalized loss")
+        plt.tight_layout()
         plt.show()
     #print(loss.item())
 

@@ -6,7 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 class KaggleFoodDataset(Dataset):
-    def __init__(self, csv_file, image_dir, transform=transforms.ToTensor()):
+    def __init__(self, csv_file, image_dir, transform=None, train=True, train_split=0.8):
         """
         Args:
             csv_file (string): Path to the csv file with recipe and image mappings.
@@ -14,6 +14,11 @@ class KaggleFoodDataset(Dataset):
             transform (callable, optional): Optional transform to be applied on the image.
         """
         self.food_data = pd.read_csv(csv_file).dropna()
+        if train:
+            self.food_data = self.food_data.iloc[:int(len(self.food_data) * train_split), ...]
+        else:
+            self.food_data = self.food_data.iloc[int(len(self.food_data) * train_split):, ...]
+
         self.image_dir = image_dir
         self.transform = transform
         #self.all_data = torch.load(os.path.join(image_dir, "all_data_float16.pt"))
