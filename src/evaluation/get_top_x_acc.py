@@ -16,9 +16,9 @@ def get_top_x_acc(logits:torch.tensor,
         if test_loader is not None:
             img_embs = []
             text_embs = []
-            for image, text in tqdm.tqdm(test_loader):
+            for image, title, ingredients in tqdm.tqdm(test_loader):
                 img_emb = vision_model(image.to(d))
-                text_emb = text_model(text)
+                text_emb = text_model(title, ingredients)
                 img_embs.append(img_emb)
                 text_embs.append(text_emb)
 

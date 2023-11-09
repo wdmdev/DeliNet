@@ -5,7 +5,7 @@ import torch.nn.functional as f
 import tqdm
 import matplotlib.pyplot as plt
 plt.style.use("ggplot")
-
+import copy
 class ResNet_wrapper(torch.nn.Module):
     def __init__(self, ResNet, latent_dim=768, d="cuda"):
         super().__init__()
@@ -38,13 +38,15 @@ class ViT_wrapper(torch.nn.Module):
 
     def forward(self, images):
         output = self.model(images)
-        cls_token = output.pooler_output
-        #out = self.fc(self.activation(cls_token))
+        #latent = output.latent
+        latent = output.pooler_output
+        out = self.fc(self.activation(latent))
 
-        return cls_token
+        return out
 
-class Bert_wrapper(torch.nn.Module):
-    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=32):
+
+class Bert_mono_wrapper(torch.nn.Module):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=16):
         super().__init__()
         self.d = d
         self.max_length = max_length
@@ -55,8 +57,8 @@ class Bert_wrapper(torch.nn.Module):
         self.fc = torch.nn.Linear(latent_dim, latent_dim)
         self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
 
-    def forward(self, text):
-        preprocessed = self.BertTokenizer(text=text,
+    def forward(self, titles, ingredients=None):
+        preprocessed = self.BertTokenizer(text=titles,
                                           padding=True,
                                           truncation=True,
                                           max_length=self.max_length,
@@ -65,6 +67,70 @@ class Bert_wrapper(torch.nn.Module):
         output = self.BertModel(**preprocessed)
         cls_token = output.pooler_output
         out = self.fc(self.activation(cls_token))
+
+        return out
+
+class Bert_2xinput_wrapper(torch.nn.Module):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=128):
+        super().__init__()
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertModel = BertModel
+        self.BertTokenizer = BertTokenizer
+        self.activation = torch.nn.GELU()
+        self.fc = torch.nn.Linear(latent_dim, latent_dim)
+        self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
+
+    def forward(self, titles, ingredients):
+        combined = [title + " " + ing for title, ing in zip(titles, ingredients)]
+        preprocessed = self.BertTokenizer(text=combined,
+                                          padding=True,
+                                          truncation=True,
+                                          max_length=self.max_length,
+                                          return_tensors="pt").to(self.d)
+
+        output = self.BertModel(**preprocessed)
+        #output = self.BertModel(preprocessed.input_ids)
+        cls_token = output.pooler_output
+        out = self.fc(self.activation(cls_token))
+
+        return out
+
+class Bert_2x_network_wrapper(torch.nn.Module):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=32):
+        super().__init__()
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertModel1 = BertModel
+        self.BertModel2 = copy.deepcopy(BertModel)
+
+        self.BertTokenizer = BertTokenizer
+        self.activation = torch.nn.GELU()
+        self.fc1 = torch.nn.Linear(latent_dim*2, latent_dim*2)
+        self.fc2 = torch.nn.Linear(latent_dim*2, latent_dim)
+
+        self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
+
+    def forward(self, titles, ingredients):
+        titles = self.BertTokenizer(text=titles,
+                                    padding=True,
+                                    truncation=True,
+                                    max_length=self.max_length,
+                                    return_tensors="pt").to(self.d)
+
+        ingredients = self.BertTokenizer(text=ingredients,
+                                         padding=True,
+                                         truncation=True,
+                                         max_length=self.max_length*4,
+                                         return_tensors="pt").to(self.d)
+        #preprocessed["input_ids"]
+        output1 = self.BertModel1(**titles).pooler_output
+        output2 = self.BertModel2(**ingredients).pooler_output
+
+        output = self.fc1(self.activation(torch.cat((output1, output2), dim=1)))
+        out = self.fc2(self.activation(output))
 
         return out
 
@@ -86,7 +152,7 @@ if __name__ == "__main__":
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
-    batch_size = 75 #200 is max for resnet18, 80 is max for resnet50, 44 is max for ViT
+    batch_size = 42 #200 is max for resnet18, 80 is max for resnet50, 44 is max for ViT
     food_dataset_train = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
                                            transform=preprocess, train=True, train_split=0.9)
     food_dataset_test = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
@@ -96,22 +162,26 @@ if __name__ == "__main__":
     dataloader_train = DataLoader(food_dataset_train, batch_size=batch_size, shuffle=True)
     dataloader_test= DataLoader(food_dataset_test, batch_size=batch_size, shuffle=False)
 
-    from transformers import BertTokenizer, BertModel, ViTModel, AutoImageProcessor
+    from transformers import BertTokenizer, BertModel, ViTModel, ViTMAEModel, AutoImageProcessor
     # ViTImageProcessor_ = AutoImageProcessor.from_pretrained("facebook/vit-mae-base")# uses same preprocess as resnet!
-    ViTModel_ = ViTModel.from_pretrained("facebook/vit-mae-base")
-    vision_model = ViT_wrapper(ViTModel_, d=d).to(d)
+
+    #ViTModel_ = ViTModel.from_pretrained("facebook/vit-mae-base")
+    #ViTModel_ = ViTMAEModel.from_pretrained("facebook/vit-mae-base")
+    #vision_model = ViT_wrapper(ViTModel_, d=d).to(d)
     # #vision_model(batch_images)
 
     BertModel_ = BertModel.from_pretrained("bert-base-uncased")
     BertTokenizer_ = BertTokenizer.from_pretrained('bert-base-uncased')
-    text_model = Bert_wrapper(BertModel_, BertTokenizer_, d=d).to(d)
+    #text_model = Bert_mono_wrapper(BertModel_, BertTokenizer_, d=d).to(d)
+    text_model = Bert_2xinput_wrapper(BertModel_, BertTokenizer_, d=d).to(d)
+    #text_model = Bert_2x_network_wrapper(BertModel_, BertTokenizer_, d=d).to(d)
 
     from transformers import ResNetModel
     ResNet = ResNetModel.from_pretrained("microsoft/resnet-50")
     vision_model = ResNet_wrapper(ResNet, d=d).to(d)
 
     loss_fn = torch.nn.CrossEntropyLoss()
-    lr = 0.0001 * (batch_size / 75) # 0.00003 for Vit (since smaller batchsize) 0.0001 for resnet
+    lr = 0.0001 * (batch_size / 100) # 0.00003 for Vit (since smaller batchsize) 0.0001 for resnet
     opt_vision = torch.optim.AdamW(lr=lr, params=vision_model.parameters())
     opt_text = torch.optim.AdamW(lr=lr, params=text_model.parameters())
 
@@ -122,12 +192,12 @@ if __name__ == "__main__":
     for epoch_num in range(100):
         vision_model.train()
         text_model.train()
-        for batch_num, (batch_images, batch_recipe_titles) in enumerate(tqdm.tqdm(dataloader_train)):
+        for batch_num, (batch_images, batch_titles, batch_ingredients) in enumerate(tqdm.tqdm(dataloader_train)):
             labels = torch.arange(batch_images.shape[0], device=d)
             batch_images = batch_images.to(torch.float32).to(d)
 
             text_latent = vision_model(batch_images)
-            img_latent = text_model(batch_recipe_titles)
+            img_latent = text_model(batch_titles, batch_ingredients)
             text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
             img_latent = img_latent / torch.linalg.norm(img_latent, axis=1, keepdim=True)
 
@@ -146,10 +216,7 @@ if __name__ == "__main__":
             opt_text.step()
 
             losses.append(loss.detach())
-            # if batch_num == 0:
-            #     print(f"\nacc of batch 0 of epoch {epoch_num}: "
-            #           f"{((torch.argmax(logits, dim=0) == labels).sum() / batch_size).item():.3f}"
-            #           f" (random is {1/batch_size:.3f})")
+
 
         top_x_percent = [0, 0.10, 0.25]
         top_x_acc = get_top_x_acc(logits=None, top_x_percent = top_x_percent, test_loader=dataloader_test,
@@ -166,7 +233,7 @@ if __name__ == "__main__":
         losses_numpy = torch.stack(losses).cpu().numpy()
         plt.plot(losses_numpy/losses_numpy.max(), label="train loss (normalized)")
         plt.legend()
-        plt.title(f"{vision_model.model.name_or_path} - epoch {epoch_num+1} ")
+        plt.title(f"{text_model.__class__.__name__} & {vision_model.model.name_or_path} - epoch {epoch_num+1} ")
         plt.xlabel("steps")
         plt.ylabel("acc/ normalized loss")
         plt.tight_layout()

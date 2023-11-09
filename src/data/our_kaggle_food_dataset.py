@@ -52,11 +52,10 @@ class KaggleFoodDataset(Dataset):
         #     'ingredients': [self.food_data.iloc[idx, 2]],
         #     'instructions': [self.food_data.iloc[idx, 3]]
         # }
-        recipe_title = self.food_data.iloc[idx, 1]
         #image = transforms.ToTensor()(image).to(torch.float32)
 
 
-        return image, recipe_title
+        return image, self.food_data.iloc[idx, 1], self.food_data.iloc[idx, 2]
 
 
 def test():
