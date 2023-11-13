@@ -17,7 +17,7 @@ class KaggleFoodDataset(Dataset):
             image_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied on the image.
         """
-        food_data = pd.read_csv(csv_file)
+        food_data = pd.read_csv(csv_file).dropna()
         self.recipe_titles = clip.tokenize(list(food_data.iloc[:, 1].astype(str)))
         self.img_paths = [os.path.join(image_dir, img_name + ".jpg") for img_name in food_data.iloc[:, 4]]
         self.transform = transform
