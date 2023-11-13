@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - model: CLIP1
+  - model: CLIP2
   - data: kaggle_food_data
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled

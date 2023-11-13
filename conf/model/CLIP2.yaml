@@ -1,0 +1,18 @@
+name: CLIP2
+path: openai/clip-vit-base-patch32
+processor: openai/clip-vit-base-patch32
+load: ViT-B/32
+
+save_dir: models/CLIP2
+
+train:
+  epochs: 30
+  batch_size: 10000
+  max_batch_part_size: 100
+  t_scale: 2.6592
+
+optimizer:
+  lr: 5.e-5
+  betas: [0.9,0.98]
+  eps: 1.e-6
+  weight_decay: 0.2
