@@ -1,12 +1,15 @@
 import os
+from typing import Any
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 
 import clip
 from src.data.CLIP_kaggle_food_dataset import KaggleFoodDataset
+from src.evaluation.get_top_x_acc import get_top_x_acc
 
 import hydra
 from omegaconf import DictConfig
@@ -76,6 +79,43 @@ class CLIPFineTuned(L.LightningModule):
         self.log("train_loss", avg_loss, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
 
         return avg_loss
+    
+    def validation_step(self, batch, batch_idx):
+        images, texts = batch
+        images = images.to(self.device)
+        texts = texts.to(self.device)
+
+        # Forward pass
+        with torch.no_grad():
+            img_embs = self.model.encode_image(images)
+            text_embs = self.model.encode_text(texts)
+            img_embs = img_embs / torch.linalg.norm(img_embs, axis=1, keepdim=True)
+            text_embs = text_embs / torch.linalg.norm(text_embs, axis=1, keepdim=True)
+            logits = text_embs @ img_embs.T
+
+        # Calculate top X percent accuracies
+        top_x_percent = [0, 0.10, 0.25]
+        n = logits.shape[0]
+        accs = {}
+    
+        labels = torch.arange(n).to(self.device)
+        logits_arg_sort = torch.argsort(logits, dim=1, descending=True)
+
+        for percent_acc in top_x_percent:
+            if percent_acc == 0.0:
+                acc = (logits_arg_sort[:, 0] == labels).float().mean().item()
+            else:
+                top_x_cols = int(n * percent_acc)
+                acc = (logits_arg_sort[:, :top_x_cols] == labels[:, None]).any(dim=1).float().mean().item()
+
+            accs[f'top_{int(percent_acc * 100)}_percent_acc'] = acc
+
+        # Logging accuracies
+        for key, value in accs.items():
+            self.log(key, value, on_step=False, on_epoch=True, prog_bar=True)
+
+        return accs
+
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), **self.cfg.model.optimizer)
@@ -100,8 +140,19 @@ def finetune_model(cfg: DictConfig):
 
     dataset = KaggleFoodDataset(csv_file=cfg.data.processed.csv, 
                                 image_dir=cfg.data.processed.img, transform=transform)
-    train_dataloader = DataLoader(dataset, batch_size=cfg.model.train.batch_size, 
-                                    shuffle=True, num_workers=23) 
+    # Calculate the split sizes
+    total_size = len(dataset)
+    train_size = int(0.9 * total_size)
+    test_size = total_size - train_size
+
+    # Split the dataset
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+
+    # Create DataLoaders
+    train_loader = DataLoader(train_dataset, batch_size=cfg.model.train.batch_size, shuffle=True,
+                              num_workers=23)
+    val_loader = DataLoader(test_dataset, batch_size=cfg.model.test.batch_size, shuffle=False,
+                             num_workers=23)
 
     # Create a PyTorch Lightning module
     L.seed_everything(42, workers=True)
@@ -114,7 +165,7 @@ def finetune_model(cfg: DictConfig):
                             accelerator="gpu" if torch.cuda.is_available() else "cpu",
                             deterministic=True, logger=logger,
                             callbacks=[checkpoint_callback])
-    trainer.fit(model, train_dataloader)
+    trainer.fit(model, train_loader=train_loader, val_dataloaders=val_loader)
 
 if __name__ == '__main__':
     finetune_model()
