@@ -146,12 +146,12 @@ def finetune_model(cfg: DictConfig):
     test_size = total_size - train_size
 
     # Split the dataset
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+    train_dataset, val_dataset = random_split(dataset, [train_size, test_size])
 
     # Create DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=cfg.model.train.batch_size, shuffle=True,
                               num_workers=23)
-    val_loader = DataLoader(test_dataset, batch_size=cfg.model.test.batch_size, shuffle=False,
+    val_loader = DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False,
                              num_workers=23)
 
     # Create a PyTorch Lightning module
@@ -165,7 +165,7 @@ def finetune_model(cfg: DictConfig):
                             accelerator="gpu" if torch.cuda.is_available() else "cpu",
                             deterministic=True, logger=logger,
                             callbacks=[checkpoint_callback])
-    trainer.fit(model, train_loader=train_loader, val_dataloaders=val_loader)
+    trainer.fit(model, train_loader, val_loader)
 
 if __name__ == '__main__':
     finetune_model()

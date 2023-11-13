@@ -8,7 +8,7 @@
 ### -- Specify that the process should be run exclusively on a gpu
 #BSUB -gpu "num=1:mode=exclusive_process"
 ### -- set the job Name --
-#BSUB -J finetune 
+#BSUB -J 3Kfinetune 
 ### -- set walltime limit: hh:mm --  maximum 24 hours for GPU-queues right now
 #BSUB -W 10:00
 # request 15GB of system-memory

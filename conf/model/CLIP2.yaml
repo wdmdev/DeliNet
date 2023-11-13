@@ -7,7 +7,7 @@ save_dir: models/CLIP2
 
 train:
   epochs: 30
-  batch_size: 10000
+  batch_size: 3000
   max_batch_part_size: 100
   t_scale: 2.6592
 
