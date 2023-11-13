@@ -19,17 +19,17 @@ def main(cfg: DictConfig):
     model, preprocess = clip.load(cfg.model.load, device=device, jit=False)
 
     #Load the state_dict from the checkpoint
-    checkpoint = torch.load("models/CLIP1/epoch=29-step=420.ckpt")
+    checkpoint = torch.load("models/CLIP1/epoch=93-step=1316.ckpt", map_location=device)
     model = CLIPFineTuned(model, preprocess, cfg)
     model.load_state_dict(checkpoint['state_dict'])
 
-    # url = "https://th.bing.com/th/id/OIP.b7gaP88IQPpxPbQBVgLN-wHaF-?pid=ImgDet&rs=1" #hotdog
-    url = "https://thedumplingsisters.files.wordpress.com/2014/11/tds-noodles-2.jpg" #wok noodles
+    url = "https://bing.com/th?id=OSK.5f91ccebc69d72f200f48621e86049f6"
+    # url = "https://thedumplingsisters.files.wordpress.com/2014/11/tds-noodles-2.jpg" #wok noodles
     image = Image.open(requests.get(url, stream=True).raw).convert('RGB')
     image = transforms.Resize((224,224))(image)
     image = preprocess(image).unsqueeze(0).to(device)
     
-    labels =['soup', 'ice cream', 'pizza', 'hotdog', 'noodles'] 
+    labels =['soup', 'ice-cream', 'pizza', 'cake', 'noodles'] 
     text = clip.tokenize(labels).to(device)
 
     with torch.no_grad():
