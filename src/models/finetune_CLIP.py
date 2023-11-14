@@ -1,6 +1,4 @@
 import os
-from typing import Any
-from lightning.pytorch.utilities.types import STEP_OUTPUT
 
 import torch
 import torch.nn.functional as F
@@ -9,14 +7,12 @@ from torch.utils.data import DataLoader, random_split
 
 import clip
 from src.data.CLIP_kaggle_food_dataset import KaggleFoodDataset
-from src.evaluation.get_top_x_acc import get_top_x_acc
 
 import hydra
 from omegaconf import DictConfig
 
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint
-from transformers import CLIPModel
 
 from dvclive.lightning import DVCLiveLogger
 
@@ -114,6 +110,8 @@ class CLIPFineTuned(L.LightningModule):
         for key, value in accs.items():
             self.log(key, value, on_step=False, on_epoch=True, prog_bar=True)
 
+        
+
         return accs
 
 
@@ -124,6 +122,9 @@ class CLIPFineTuned(L.LightningModule):
 
 @hydra.main(version_base=None, config_path=os.path.join('..', '..', 'conf'), config_name='config')
 def finetune_model(cfg: DictConfig):
+    #Set global seed
+    L.seed_everything(42, workers=True)
+
     # Load the CLIP model and processor
     device = "cuda" if torch.cuda.is_available() else "cpu" 
     model, preprocess = clip.load(cfg.model.load, device=device, jit=False)
@@ -155,7 +156,6 @@ def finetune_model(cfg: DictConfig):
                              num_workers=23)
 
     # Create a PyTorch Lightning module
-    L.seed_everything(42, workers=True)
     model = CLIPFineTuned(model, preprocess, cfg)
 
     # Create a PyTorch Lightning trainer and start training with DVC logging
