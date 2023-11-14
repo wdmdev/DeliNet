@@ -8,13 +8,13 @@
 ### -- Specify that the process should be run exclusively on a gpu
 #BSUB -gpu "num=1:mode=exclusive_process"
 ### -- set the job Name --
-#BSUB -J 3Kfinetune 
+#BSUB -J ourmodel
 ### -- set walltime limit: hh:mm --  maximum 24 hours for GPU-queues right now
 #BSUB -W 10:00
 # request 15GB of system-memory
 #BSUB -R "rusage[mem=15GB]"
 ### User email address
-#BSUB -u s183921@student.dtu.dk
+#BSUB -u s183918@student.dtu.dk
 ### -- send notification at completion--
 ##BSUB -N
 ### -- Specify the output and error file. %J is the job-id --
@@ -26,5 +26,6 @@
 #Load modules
 source env/bin/activate
 
-python3 -m src.models.finetune_CLIP
+python3 -m src.models.our_model
+# python3 -m src.models.finetune_CLIP
 # python3 -m src.models.CLIP_vectorize
