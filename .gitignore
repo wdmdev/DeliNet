@@ -964,3 +964,4 @@ src/data/raw
 src/data/archive/
 error*.err
 output*.out
+dvclive/
