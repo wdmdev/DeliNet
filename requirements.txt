@@ -9,3 +9,7 @@ clip-openai
 lightning
 dvclive
 scikit-learn
+matplotlib
+tqdm
+typing
+filelock
