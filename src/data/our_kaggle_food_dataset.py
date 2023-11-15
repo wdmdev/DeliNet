@@ -3,7 +3,6 @@ import pandas as pd
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
 
 class KaggleFoodDataset(Dataset):
     def __init__(self, csv_file, image_dir, transform=None, train=True, train_split=0.8):
@@ -20,6 +19,10 @@ class KaggleFoodDataset(Dataset):
             self.food_data = self.food_data.iloc[int(len(self.food_data) * train_split):, ...]
 
         self.image_dir = image_dir
+        self.titles = self.food_data.iloc[:,1].tolist()
+        self.ingre = self.food_data.iloc[:,2].tolist()
+        self.desc = self.food_data.iloc[:,3].tolist()
+        self.img = self.food_data.iloc[:,4].tolist()
         self.transform = transform
         #self.all_data = torch.load(os.path.join(image_dir, "all_data_float16.pt"))
 
@@ -39,7 +42,7 @@ class KaggleFoodDataset(Dataset):
     #     return image, recipe_title
 
     def __getitem__(self, idx):
-        img_name = os.path.join(self.image_dir, self.food_data.iloc[idx, 4] + ".jpg")
+        img_name = os.path.join(self.image_dir, self.img[idx] + ".jpg")
         image = Image.open(img_name).convert('RGB')
         # Resize images to ensure same dimensions, 224 because many models are pretrained on that
         #image = transforms.Resize((224,224))(image)
@@ -54,8 +57,7 @@ class KaggleFoodDataset(Dataset):
         # }
         #image = transforms.ToTensor()(image).to(torch.float32)
 
-
-        return image, self.food_data.iloc[idx, 1], self.food_data.iloc[idx, 2]
+        return image, self.titles[idx], self.ingre[idx], self.desc[idx]
 
 
 def test():
