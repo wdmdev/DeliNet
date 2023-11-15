@@ -1,218 +1,130 @@
-# Adapted from : https://github.com/dome272/Diffusion-Models-pytorch
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import copy
 
-
-def pos_encoding(t, channels, device):
-    inv_freq = 1.0 / (
-            10000
-            ** (torch.arange(0, channels, 2, device=device).float() / channels)
-    )
-    pos_enc_a = torch.sin(t.repeat(1, channels // 2) * inv_freq)
-    pos_enc_b = torch.cos(t.repeat(1, channels // 2) * inv_freq)
-    pos_enc = torch.cat([pos_enc_a, pos_enc_b], dim=-1)
-    return pos_enc
-
-
-class SelfAttention(nn.Module):
-    def __init__(self, channels, size):
-        super(SelfAttention, self).__init__()
-        self.channels = channels
-        self.size = size
-        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
-        self.ln = nn.LayerNorm([channels])
-        self.ff_self = nn.Sequential(
-            nn.LayerNorm([channels]),
-            nn.Linear(channels, channels),
-            nn.GELU(),
-            nn.Linear(channels, channels),
-        )
-
-    def forward(self, x):
-        x = x.view(-1, self.channels, self.size * self.size).swapaxes(1, 2)
-        x_ln = self.ln(x)
-        attention_value, _ = self.mha(x_ln, x_ln, x_ln)
-        attention_value = attention_value + x
-        attention_value = self.ff_self(attention_value) + attention_value
-        return attention_value.swapaxes(2, 1).view(-1, self.channels, self.size, self.size)
-
-
-class DoubleConv(nn.Module):
-    def __init__(self, in_channels, out_channels, mid_channels=None, residual=False):
+class ResNet_wrapper(torch.nn.Module):
+    def __init__(self, ResNet, latent_dim=768, d="cuda"):
         super().__init__()
-        self.residual = residual
-        if not mid_channels:
-            mid_channels = out_channels
-        self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(1, mid_channels),
-            nn.GELU(),
-            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(1, out_channels),
-        )
+        self.d = d
+        self.latent_dim = latent_dim
+        self.model = ResNet
+        self.activation = torch.nn.ReLU()
 
-    def forward(self, x):
-        if self.residual:
-            return F.gelu(x + self.double_conv(x))
-        else:
-            return self.double_conv(x)
+        if self.model.name_or_path.endswith(str(50)):
+            self.fc = torch.nn.Linear(2048, latent_dim)
 
+        elif self.model.name_or_path.endswith(str(18)):
+            self.fc = torch.nn.Linear(512, latent_dim)
 
-class Down(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=256):
+    def forward(self, images):
+        output = self.model(images)
+        output = output.pooler_output.squeeze()
+        out = self.fc(self.activation(output))
+
+        return out
+
+class ViT_wrapper(torch.nn.Module):
+    def __init__(self, ViT, latent_dim=768, d="cuda"):
         super().__init__()
-        self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2),
-            DoubleConv(in_channels, in_channels, residual=True),
-            DoubleConv(in_channels, out_channels),
-        )
+        self.d = d
+        self.latent_dim = latent_dim
+        self.model = ViT
+        self.activation = torch.nn.GELU()
+        self.fc = torch.nn.Linear(latent_dim, latent_dim)
 
-        # self.emb_layer = nn.Sequential(
-        #     nn.SiLU(),
-        #     nn.Linear(
-        #         emb_dim,
-        #         out_channels
-        #     ),
-        # )
+    def forward(self, images):
+        output = self.model(images)
+        #latent = output.latent
+        latent = output.pooler_output
+        out = self.fc(self.activation(latent))
 
-    def forward(self, x, t=None):
-        #x = self.maxpool_conv(x)
-        #emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
-        return self.maxpool_conv(x)
+        return out
 
 
-class Up(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=256):
+class Bert_mono_wrapper(torch.nn.Module):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=16):
         super().__init__()
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertModel = BertModel
+        self.BertTokenizer = BertTokenizer
+        self.activation = torch.nn.GELU()
+        self.fc = torch.nn.Linear(latent_dim, latent_dim)
+        self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
 
-        self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
-        self.conv = nn.Sequential(
-            DoubleConv(in_channels, in_channels, residual=True),
-            DoubleConv(in_channels, out_channels, in_channels // 2),
-        )
+    def forward(self, titles, ingredients=None):
+        preprocessed = self.BertTokenizer(text=titles,
+                                          padding=True,
+                                          truncation=True,
+                                          max_length=self.max_length,
+                                          return_tensors="pt").to(self.d)
 
-        self.emb_layer = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(
-                emb_dim,
-                out_channels
-            ),
-        )
+        output = self.BertModel(**preprocessed)
+        cls_token = output.pooler_output
+        out = self.fc(self.activation(cls_token))
 
-    def forward(self, x, skip_x, t):
-        x = self.up(x)
-        x = torch.cat([skip_x, x], dim=1)
-        x = self.conv(x)
-        emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
-        return x + emb
+        return out
 
-
-class UNet(nn.Module):
-    def __init__(self, img_size=16, c_in=3, c_out=3, time_dim=256, device="cpu", channels=32, num_classes=None):
-        '''If num_classes is None then it is a standard UNet
-           Expects one-hot encoded classes '''
+class Bert_2xinput_wrapper(torch.nn.Module):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=128):
         super().__init__()
-        self.num_classes = num_classes
-        self.device = device
-        self.time_dim = time_dim
-        self.inc = DoubleConv(c_in, channels)
-        self.down1 = Down(channels, channels * 2, emb_dim=time_dim)
-        self.sa1 = SelfAttention(channels * 2, img_size // 2)
-        self.down2 = Down(channels * 2, channels * 4, emb_dim=time_dim)
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertModel = BertModel
+        self.BertTokenizer = BertTokenizer
+        self.activation = torch.nn.GELU()
+        self.fc = torch.nn.Linear(latent_dim, latent_dim)
+        self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
 
-        self.sa2 = SelfAttention(channels * 4, img_size // 4)
-        self.down3 = Down(channels * 4, channels * 4, emb_dim=time_dim)
-        self.sa3 = SelfAttention(channels * 4, img_size // 8)
+    def forward(self, titles, ingres, desc):
+        combined = [title + " " + ing for title, ing in zip(titles, ingres)]
+        preprocessed = self.BertTokenizer(text=combined,
+                                          padding=True,
+                                          truncation=True,
+                                          max_length=self.max_length,
+                                          return_tensors="pt").to(self.d)
 
-        self.bot1 = DoubleConv(channels * 4, channels * 8)
-        self.bot2 = DoubleConv(channels * 8, channels * 8)
-        self.bot3 = DoubleConv(channels * 8, channels * 4)
+        output = self.BertModel(**preprocessed)
+        #output = self.BertModel(preprocessed.input_ids)
+        cls_token = output.pooler_output
+        out = self.fc(self.activation(cls_token))
 
-        self.up1 = Up(channels * 8, channels * 2, emb_dim=time_dim)
-        self.sa4 = SelfAttention(channels * 2, img_size // 4)
-        self.up2 = Up(channels * 4, channels, emb_dim=time_dim)
-        self.sa5 = SelfAttention(channels, img_size // 2)
-        self.up3 = Up(channels * 2, channels, emb_dim=time_dim)
-        self.sa6 = SelfAttention(channels, img_size)
-        self.outc = nn.Conv2d(channels, c_out, kernel_size=1)
+        return out
 
-        if num_classes is not None:
-            # Project one-hot encoded labels to the time embedding dimension
-            # Implement it as a 2-layer MLP with a GELU activation in-between
-            self.label_emb1 = nn.Linear(self.num_classes, time_dim)
-            self.label_emb2 = nn.Linear(time_dim, time_dim)
-
-    def forward(self, x, t, y=None):
-
-        t = t.unsqueeze(-1).type(torch.float)
-        t = pos_encoding(t, self.time_dim, self.device)
-
-        if y is not None:
-            # Add label and time embeddings together
-            y = self.label_emb1(y)
-            y = F.gelu(y)
-            y = self.label_emb2(y)
-            t += y
-
-        x1 = self.inc(x)
-        x2 = self.down1(x1, t)
-        x2 = self.sa1(x2)
-        x3 = self.down2(x2, t)
-        x3 = self.sa2(x3)
-        x4 = self.down3(x3, t)
-        x4 = self.sa3(x4)
-        x4 = self.bot1(x4)
-        x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
-        x = self.up1(x4, x3, t)
-        x = self.sa4(x)
-        x = self.up2(x, x2, t)
-        x = self.sa5(x)
-        x = self.up3(x, x1, t)
-        x = self.sa6(x)
-        output = self.outc(x)
-
-        return output
-
-
-class Classifier(nn.Module):
-    def __init__(self, img_size=16, c_in=3, labels=5, time_dim=256, device="cuda", channels=32):
+class Bert_2x_network_wrapper(torch.nn.Module):
+    def __init__(self, BertModel, BertTokenizer, latent_dim=768, d="cuda", max_length=32):
         super().__init__()
-        self.labels = labels
-        self.device = device
-        self.time_dim = time_dim
-        self.inc = DoubleConv(c_in, channels)
-        self.down1 = Down(channels, channels * 2, emb_dim=time_dim)
-        self.sa1 = SelfAttention(channels * 2, img_size // 2)
-        self.down2 = Down(channels * 2, channels * 4, emb_dim=time_dim)
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertModel1 = BertModel
+        self.BertModel2 = copy.deepcopy(BertModel)
 
-        self.sa2 = SelfAttention(channels * 4, img_size // 4)
-        self.down3 = Down(channels * 4, channels * 4, emb_dim=time_dim)
-        self.sa3 = SelfAttention(channels * 4, img_size // 8)
+        self.BertTokenizer = BertTokenizer
+        self.activation = torch.nn.GELU()
+        self.fc1 = torch.nn.Linear(latent_dim*2, latent_dim*2)
+        self.fc2 = torch.nn.Linear(latent_dim*2, latent_dim)
 
-        self.bot1 = DoubleConv(channels * 4, channels * 8)
-        self.bot2 = DoubleConv(channels * 8, channels * 8)
-        # self.bot3 = DoubleConv(channels * 8, channels * 4)
-        self.MLP1 = nn.Linear(int((16 * 3 * 32 + self.time_dim * 2) / 2), int((16 * 3 * 32 + self.time_dim * 2) / 4))
-        self.MLP2_out = nn.Linear(int((16 * 3 * 32 + self.time_dim * 2) / 4), self.labels)
+        self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
 
-    def forward(self, x, t):
-        t = t.unsqueeze(-1).type(torch.float)
-        t = pos_encoding(t, self.time_dim, self.device)
+    def forward(self, titles, ingredients):
+        titles = self.BertTokenizer(text=titles,
+                                    padding=True,
+                                    truncation=True,
+                                    max_length=self.max_length,
+                                    return_tensors="pt").to(self.d)
 
-        x = self.inc(x)
-        x = self.down1(x, t)
-        x = self.sa1(x)
-        x = self.down2(x, t)
-        x = self.sa2(x)
-        x = self.down3(x, t)
-        x = self.sa3(x)
-        x = self.bot1(x)
-        x = self.bot2(x)
-        # x = self.bot3(x)
-        x = x.flatten(start_dim=1)
-        x = F.relu(self.MLP1(x))
-        out = self.MLP2_out(x)
+        ingredients = self.BertTokenizer(text=ingredients,
+                                         padding=True,
+                                         truncation=True,
+                                         max_length=self.max_length*4,
+                                         return_tensors="pt").to(self.d)
+        #preprocessed["input_ids"]
+        output1 = self.BertModel1(**titles).pooler_output
+        output2 = self.BertModel2(**ingredients).pooler_output
+
+        output = self.fc1(self.activation(torch.cat((output1, output2), dim=1)))
+        out = self.fc2(self.activation(output))
 
         return out

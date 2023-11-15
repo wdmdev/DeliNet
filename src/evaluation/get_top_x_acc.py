@@ -28,7 +28,7 @@ def get_top_x_acc(logits:torch.tensor,
             img_embs = img_embs / torch.linalg.norm(img_embs, axis=1, keepdim=True)
             text_embs = text_embs / torch.linalg.norm(text_embs, axis=1, keepdim=True)
 
-            logits = text_embs @ img_embs.T
+            logits = (text_embs @ img_embs.T) * text_model.t
 
         n = logits.shape[0]
         accs = []
