@@ -8,3 +8,5 @@ hydra:
   output_subdir: null
 run:
   dir: .
+seed: 903
+#seed: 42

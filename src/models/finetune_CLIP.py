@@ -22,7 +22,7 @@ class CLIPFineTuned(L.LightningModule):
         self.model = model
         self.preprocess = preprocess
         self.cfg = cfg
-        self.automatic_optimization = False #set for gradient accumulation
+        self.automatic_optimization = False
 
     def forward(self, images, texts):
         return self.model(images, texts)
@@ -33,48 +33,28 @@ class CLIPFineTuned(L.LightningModule):
         images = images.to(self.device)
         texts = texts.to(self.device)
 
-        max_batch_size = self.cfg.model.train.max_batch_part_size
-        num_images = images.size(0)
-        num_splits = (num_images + max_batch_size - 1) // max_batch_size
+        #cosine similarity as logits
+        img_embs = self.model.encode_image(images)
+        text_embs = self.model.encode_text(texts)
+        img_embs = img_embs / torch.linalg.norm(img_embs, axis=1, keepdim=True)
+        text_embs = text_embs / torch.linalg.norm(text_embs, axis=1, keepdim=True)
+        t = torch.tensor(self.cfg.model.train.t_scale)
+        logits = (text_embs @ img_embs.T) * torch.exp(t)
 
-        total_loss_i = 0
-        total_loss_t = 0
+        labels = torch.arange(images.size(0), device=self.device)
+        loss_i = F.cross_entropy(logits, labels)
+        loss_t = F.cross_entropy(logits.T, labels)
+        loss = (loss_i + loss_t) / 2.0
 
-        for i in range(num_splits):
-            start = i * max_batch_size
-            end = min(start + max_batch_size, num_images)
-
-            batch_images = images[start:end]
-            batch_texts = texts[start:end]
-
-            #cosine similarity as logits
-            logits_image, logits_text = self.model(batch_images, batch_texts)
-
-            # symmetric loss function
-            ground_truth = torch.arange(batch_images.size(0), dtype=torch.long, device=self.device)
-            loss_i = F.cross_entropy(logits_image, ground_truth)
-            loss_t = F.cross_entropy(logits_text, ground_truth)
-            total_loss_i += loss_i
-            total_loss_t += loss_t
-
-            # Backward pass
-            loss = (loss_i + loss_t) / 2
-            self.manual_backward(loss)
+        self.manual_backward(loss)
+        opt.step()
+        opt.zero_grad()
         
-            # Update parameters every num_splits batches
-            if (i + 1) % num_splits == 0:
-                opt.step()
-                opt.zero_grad()
+        self.log("train_img_loss", loss_i, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
+        self.log("train_txt_loss", loss_t, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
 
-        avg_loss_i = total_loss_i / num_splits
-        avg_loss_t = total_loss_t / num_splits
-        avg_loss = (avg_loss_i + avg_loss_t) / 2
-
-        self.log("train_img_loss", avg_loss_i, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
-        self.log("train_txt_loss", avg_loss_t, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
-        self.log("train_loss", avg_loss, on_step=False, on_epoch=True, batch_size=self.cfg.model.train.batch_size)
-
-        return avg_loss
+        return loss
     
     def validation_step(self, batch, batch_idx):
         images, texts = batch
@@ -123,7 +103,7 @@ class CLIPFineTuned(L.LightningModule):
 @hydra.main(version_base=None, config_path=os.path.join('..', '..', 'conf'), config_name='config')
 def finetune_model(cfg: DictConfig):
     #Set global seed
-    L.seed_everything(42, workers=True)
+    L.seed_everything(cfg.seed, workers=True)
 
     # Load the CLIP model and processor
     device = "cuda" if torch.cuda.is_available() else "cpu" 
