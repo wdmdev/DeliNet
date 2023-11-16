@@ -4,13 +4,13 @@
 #BSUB -q gpuv100
 ### Mulige gpu clusters gpuv100, gpuk80 og gpuk40
 ### -- Ask for number of cores
-#BSUB -n 4
+#BSUB -n 10
 ### -- Specify that the process should be run exclusively on a gpu
 #BSUB -gpu "num=1:mode=exclusive_process"
 ### -- set the job Name --
 #BSUB -J ourmodel
 ### -- set walltime limit: hh:mm --  maximum 24 hours for GPU-queues right now
-#BSUB -W 10:00
+#BSUB -W 11:00
 # request 15GB of system-memory
 #BSUB -R "rusage[mem=15GB]"
 ### User email address
