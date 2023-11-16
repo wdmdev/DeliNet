@@ -56,7 +56,7 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model,
     food_dataset_test = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
                                            transform=preprocess, train=False, train_split=0.9)
 
-    num_workers = 0 if os.name=="nt" else os.cpu_count()# set num workers to all cores if not windows
+    num_workers = 0 if os.name=="nt" else 6 #os.cpu_count()# set num workers to all cores if not windows
     dataloader_train = DataLoader(food_dataset_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     dataloader_test = DataLoader(food_dataset_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
