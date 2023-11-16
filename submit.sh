@@ -26,6 +26,6 @@
 #Load modules
 source env/bin/activate
 
-python3 -m src.models.our_model
+python3 -m src.models.run_our_model
 # python3 -m src.models.finetune_CLIP
 # python3 -m src.models.CLIP_vectorize

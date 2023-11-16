@@ -57,7 +57,7 @@ class KaggleFoodDataset(Dataset):
         # }
         #image = transforms.ToTensor()(image).to(torch.float32)
 
-        return image, self.titles[idx], self.ingre[idx], self.desc[idx]
+        return image, (self.titles[idx], self.ingre[idx], self.desc[idx])
 
 
 def test():

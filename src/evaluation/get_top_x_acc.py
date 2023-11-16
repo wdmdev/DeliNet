@@ -7,7 +7,8 @@ def get_top_x_acc(logits:torch.tensor,
                   test_loader=None,
                   vision_model=None,
                   text_model = None,
-                  d = "cuda") -> List[float]:
+                  d = "cuda",
+                  test_training_loop:bool=False) -> List[float]:
 
     with torch.no_grad():
         vision_model.eval()
@@ -16,11 +17,14 @@ def get_top_x_acc(logits:torch.tensor,
         if test_loader is not None:
             img_embs = []
             text_embs = []
-            for image, title, ingredients in tqdm.tqdm(test_loader):
+            for i, (image, text) in enumerate(tqdm.tqdm(test_loader)):
                 img_emb = vision_model(image.to(d))
-                text_emb = text_model(title, ingredients)
+                text_emb = text_model(text)
                 img_embs.append(img_emb)
                 text_embs.append(text_emb)
+
+                if test_training_loop and i == 2:
+                    break
 
             img_embs = torch.cat(img_embs, dim=0)
             text_embs = torch.cat(text_embs, dim=0)
@@ -38,7 +42,7 @@ def get_top_x_acc(logits:torch.tensor,
             if percent_acc == -1.0 or percent_acc == 0.0:
                 acc = (logtis_arg_sort[:,0] == labels).to(float).mean().item()
             else:
-                top_x_cols = torch.round(torch.tensor([n*percent_acc])).to(int)
+                top_x_cols = torch.round(torch.tensor([n*percent_acc]).to(torch.float32)).to(int)
                 acc = logtis_arg_sort[:, :top_x_cols] == labels[:,None]
                 acc = acc.sum(dim=1).to(float).mean().item()
 
