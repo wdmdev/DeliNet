@@ -149,8 +149,8 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model,
             # vision_model = torch.load(os.path.join(save_folder, vision_model_name+".pt"))
             # text_model = torch.load(os.path.join(save_folder, text_model_name+".pt"))
 
-        plt.show()
-        plt.close()
+        plt.show(block=False)
+        plt.close('all')
         if training_loop_test:
             print(f"Peak memory usage: {torch.cuda.max_memory_allocated()/ 1e9:.1f}GB")
             print("Test complete - exiting test training!")
