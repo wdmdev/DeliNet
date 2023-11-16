@@ -968,3 +968,4 @@ error*.err
 output*.out
 dvclive/
 .dvc/
+src/models/saved_models
