@@ -41,6 +41,11 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
 
+    print("!!!!!!!!!!!!!"*20)
+    print("!!!!!!!!!!!!!"*20)
+    print("!!!!!!!!!!!!!"*20)
+    print("ALL TEST COMPLETE - starting proper training")
+
     # the proper training loop
     training_loop_test = False
     for vision_model, batch_size in vision_models:
