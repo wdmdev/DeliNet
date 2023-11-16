@@ -35,7 +35,7 @@ if __name__ == "__main__":
                         lr=0.0001,
                         d=d,
                         num_epochs=100,
-                        max_time=3600,  # 1hour
+                        max_time=3600*2,  # 2hour max
                         training_loop_test=training_loop_test,
                         save_results=save_results)
         torch.cuda.empty_cache()
