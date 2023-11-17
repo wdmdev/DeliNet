@@ -25,6 +25,7 @@ if __name__ == "__main__":
     #running test to see that all models can run
     training_loop_test = True
     for vision_model, batch_size in vision_models:
+        text_model = DistilBert_mono_wrapper()
         print("####"*20)
         print("####"*20)
         train_our_model(csv_file_path,
@@ -35,7 +36,7 @@ if __name__ == "__main__":
                         lr=0.0001,
                         d=d,
                         num_epochs=100,
-                        max_time=3600*2,  # 2hour max
+                        max_time=3600*2,  # 1hour max
                         training_loop_test=training_loop_test,
                         save_results=save_results)
         torch.cuda.empty_cache()
@@ -46,9 +47,17 @@ if __name__ == "__main__":
     print("!!!!!!!!!!!!!"*20)
     print("ALL TEST COMPLETE - starting proper training")
 
+    vision_models = [(ViT_wrapper(), 50),
+                     (EfficientTrans_wrapper(), 100),
+                     (ResNet_wrapper(size=18), 240),
+                     (ResNet_wrapper(size=50), 80),
+                     (Efficientnet_wrapper(size=4), 35),
+                     ]
+
     # the proper training loop
     training_loop_test = False
     for vision_model, batch_size in vision_models:
+        text_model = DistilBert_mono_wrapper()
         train_our_model(csv_file_path,
                         image_dir,
                         vision_model,
@@ -57,7 +66,7 @@ if __name__ == "__main__":
                         lr=0.0001,
                         d=d,
                         num_epochs=100,
-                        max_time=3600,  # 1hour
+                        max_time=3600*2,  # 2hour
                         training_loop_test=training_loop_test,
                         save_results=save_results)
 
