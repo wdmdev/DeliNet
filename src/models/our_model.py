@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from src.data.our_kaggle_food_dataset import KaggleFoodDataset
 from src.evaluation.get_top_x_acc import get_top_x_acc
 from src.models.model_utils import *
-from loss_funcs import triplet_loss, contrastive_loss
+from src.models.loss_funcs import triplet_loss, contrastive_loss
 from itertools import chain
 
 def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn = contrastive_loss,
@@ -170,14 +170,15 @@ if __name__ == "__main__":
     #torch.set_default_dtype(torch.float16)
 
     d = "cuda"
-    vision_model = ResNet_wrapper(size = "18")
+    #vision_model = ResNet_wrapper(size = "18")
     #vision_model = ViT_wrapper()
-    #vision_model = EfficientTrans_wrapper(d=d)
+    vision_model = EfficientTrans_wrapper()
+    #vision_model = ResNet_wrapper(size = "50")
     #vision_model = Efficientnet_wrapper(size=3, d=d)
     #text_model = Bert_2x_network_wrapper(BertModel_, BertTokenizer_, d=d)
     #text_model = Bert_2xinput_wrapper(d=d)
-    text_model = DistilBert_mono_wrapper()
-    batch_size = 450
+    text_model = DistilBert_2xInp_wrapper(max_length=256)
+    batch_size = 80
     training_loop_test = False
     save_results = True
     train_our_model(csv_file_path,

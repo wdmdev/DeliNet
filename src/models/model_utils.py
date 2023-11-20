@@ -267,7 +267,7 @@ class Bert_2xNet_wrapper(torch.nn.Module):
         return out
 
 class DistilBert_3xNet_wrapper(torch.nn.Module):
-    def __init__(self, latent_dim=768, d="cpu", max_length=32):
+    def __init__(self, latent_dim=768, d="cpu", max_length=16):
         super().__init__()
         self.d = d
         self.max_length = max_length
@@ -289,19 +289,19 @@ class DistilBert_3xNet_wrapper(torch.nn.Module):
         titles = self.BertTokenizer(text=titles,
                                     padding=True,
                                     truncation=True,
-                                    max_length=self.max_length,
+                                    max_length=self.max_length[0],
                                     return_tensors="pt").to(self.d)
 
         ingres = self.BertTokenizer(text=ingres,
                                          padding=True,
                                          truncation=True,
-                                         max_length=self.max_length*4,
+                                         max_length=self.max_length[1],
                                          return_tensors="pt").to(self.d)
 
         descr = self.BertTokenizer(text=descr,
                                    padding=True,
                                    truncation=True,
-                                   max_length=self.max_length*8,
+                                   max_length=self.max_length[2],
                                    return_tensors="pt").to(self.d)
 
         #preprocessed["input_ids"]
@@ -403,13 +403,13 @@ class DistilBert_2xNet_wrapper(torch.nn.Module):
         titles = self.BertTokenizer(text=titles,
                                     padding=True,
                                     truncation=True,
-                                    max_length=self.max_length,
+                                    max_length=self.max_length[0],
                                     return_tensors="pt").to(self.d)
 
         ingres = self.BertTokenizer(text=ingres,
                                          padding=True,
                                          truncation=True,
-                                         max_length=self.max_length*4,
+                                         max_length=self.max_length[1],
                                          return_tensors="pt").to(self.d)
 
 

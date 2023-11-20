@@ -11,21 +11,20 @@ if __name__ == "__main__":
   image_dir = os.path.join(food_dir, 'images')
 
   d = "cuda"
-  text_model = DistilBert_mono_wrapper()
+  vision_model = EfficientTrans_wrapper()
   save_results = True
 
 
-  vision_models = [(EfficientTrans_wrapper(), 200),
-                   (ViT_wrapper(), 63),
-                   (ResNet_wrapper(size=18), 432),
-                   (ResNet_wrapper(size=50), 144),
-                   (Efficientnet_wrapper(size=4), 63),
-                   ]
-
+  text_models = [
+                 (DistilBert_2xInp_wrapper(max_length=256), 50),
+                 (DistilBert_3xInp_wrapper(max_length=512), 50),
+                 (DistilBert_2xNet_wrapper(max_length=[32, 256]), 50),
+                 (DistilBert_3xNet_wrapper(max_length=[32, 256, 256]), 50),
+                 ]
   #running test to see that all models can run
   training_loop_test = True
-  for vision_model, batch_size in vision_models:
-    text_model = DistilBert_mono_wrapper()
+  for text_model, batch_size in text_models:
+    vision_model = EfficientTrans_wrapper()
     print("####"*20)
     print("####"*20)
     train_our_model(csv_file_path,
@@ -40,6 +39,7 @@ if __name__ == "__main__":
                     max_time=3600*2,  # 1hour max
                     training_loop_test=training_loop_test,
                     save_results=save_results)
+    text_model = text_model.cpu()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
 
@@ -48,17 +48,17 @@ if __name__ == "__main__":
   print("!!!!!!!!!!!!!"*20)
   print("ALL TEST COMPLETE - starting proper training")
 
-  vision_models = [(ViT_wrapper(), 63),
-                   (EfficientTrans_wrapper(), 180),
-                   (ResNet_wrapper(size=18), 432),
-                   (ResNet_wrapper(size=50), 144),
-                   (Efficientnet_wrapper(size=4), 63),
-                   ]
+  text_models = [
+                 (DistilBert_2xInp_wrapper(max_length=256), 50),
+                 (DistilBert_3xInp_wrapper(max_length=512), 50),
+                 (DistilBert_2xNet_wrapper(max_length=[32, 256]), 50),
+                 (DistilBert_3xNet_wrapper(max_length=[32, 256, 256]), 50),
+                 ]
 
   # the proper training loop
   training_loop_test = False
-  for vision_model, batch_size in vision_models:
-    text_model = DistilBert_mono_wrapper()
+  for text_model, batch_size in text_models:
+    vision_model = EfficientTrans_wrapper()
     train_our_model(csv_file_path,
                     image_dir,
                     vision_model,
@@ -71,6 +71,7 @@ if __name__ == "__main__":
                     use_mixed_precision=True,
                     training_loop_test=training_loop_test,
                     save_results=save_results)
+    text_model = text_model.cpu()
 
 
 
