@@ -47,7 +47,8 @@ class KaggleFoodDataset(Dataset):
         # Resize images to ensure same dimensions, 224 because many models are pretrained on that
         #image = transforms.Resize((224,224))(image)
 
-        image = self.transform(image)
+        if self.transform is not None:
+            image = self.transform(image)
 
         #torch.save(image, os.path.join(self.image_dir, self.food_data.iloc[idx, 4] + ".pt"))
         # recipe = {

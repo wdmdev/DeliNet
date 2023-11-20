@@ -13,11 +13,12 @@ from torch.utils.data import DataLoader
 from src.data.our_kaggle_food_dataset import KaggleFoodDataset
 from src.evaluation.get_top_x_acc import get_top_x_acc
 from src.models.model_utils import *
+from loss_funcs import triplet_loss, contrastive_loss
+from itertools import chain
 
-
-def train_our_model(csv_file_path, image_dir, vision_model, text_model,
+def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn = contrastive_loss,
                     batch_size=40, lr=0.0001, d="cuda", num_epochs = 100, max_time = 10_000,
-                    training_loop_test=False, save_results=False):
+                    training_loop_test=False, save_results=False, use_mixed_precision=True):
     vision_model = vision_model.to(d) # model always starts on CPU and is then moved if needed
     vision_model.d = d
 
@@ -61,10 +62,12 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model,
     dataloader_test = DataLoader(food_dataset_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
 
-    loss_fn = torch.nn.CrossEntropyLoss()
+    #loss_fn = torch.nn.CrossEntropyLoss()
     lr = lr * (batch_size / 100) # 0.00003 for Vit (since smaller batchsize) 0.0001 for resnet
-    opt_vision = torch.optim.AdamW(lr=lr, params=vision_model.parameters())
-    opt_text = torch.optim.AdamW(lr=lr, params=text_model.parameters())
+    combined_params = chain(vision_model.parameters(), text_model.parameters())
+    opt = torch.optim.AdamW(lr=lr, params=combined_params)
+    lr_scheduler = torch.optim.lr_scheduler.LinearLR(opt, start_factor=1.0, end_factor=0.01, total_iters=50)
+    AMP_scaler = torch.cuda.amp.GradScaler()
 
     losses = []
     best_25_perf = 0.0
@@ -84,30 +87,31 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model,
             labels = torch.arange(images.shape[0], device=d)
             images = images.to(d)
 
-            text_latent = vision_model(images)
-            img_latent = text_model(text)
+            # mixed precision
+            with torch.amp.autocast(enabled=use_mixed_precision, device_type=d, dtype=torch.float16):
+                text_latent = vision_model(images)
+                img_latent = text_model(text)
 
-            text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
-            img_latent = img_latent / torch.linalg.norm(img_latent, axis=1, keepdim=True)
+                text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
+                img_latent = img_latent / torch.linalg.norm(img_latent, axis=1, keepdim=True)
 
-            logits = (text_latent @ img_latent.T) * torch.exp(text_model.t)
+                loss = loss_fn(text_latent, img_latent, labels, text_model)
 
-            loss_i = loss_fn(logits, labels)
-            loss_t = loss_fn(logits.T, labels)
-            loss = (loss_i + loss_t) / 2.0
-
-            opt_vision.zero_grad()
-            opt_text.zero_grad()
-  
-            loss.backward()
-
-            opt_vision.step()
-            opt_text.step()
+            opt.zero_grad()
+            if use_mixed_precision:
+                AMP_scaler.scale(loss).backward()
+                AMP_scaler.step(opt)
+                AMP_scaler.update()
+            else:
+                loss.backward()
+                opt.step()
 
 
             losses.append(loss.detach())
 
             if training_loop_test and batch_num == 2: break
+
+        lr_scheduler.step()
 
         top_x_acc = get_top_x_acc(logits=None, top_x_percent = top_x_percent, test_loader=dataloader_test,
                                   text_model=text_model, vision_model=vision_model, d=d,
@@ -167,13 +171,14 @@ if __name__ == "__main__":
 
     d = "cuda"
     vision_model = ResNet_wrapper(size = "18")
+    #vision_model = ViT_wrapper()
     #vision_model = EfficientTrans_wrapper(d=d)
     #vision_model = Efficientnet_wrapper(size=3, d=d)
     #text_model = Bert_2x_network_wrapper(BertModel_, BertTokenizer_, d=d)
     #text_model = Bert_2xinput_wrapper(d=d)
-    text_model = DistilBert_2xNet_wrapper()
-    batch_size = 105
-    training_loop_test = True
+    text_model = DistilBert_mono_wrapper()
+    batch_size = 450
+    training_loop_test = False
     save_results = True
     train_our_model(csv_file_path,
                     image_dir,
@@ -182,8 +187,9 @@ if __name__ == "__main__":
                     batch_size=batch_size,
                     lr=0.0001,
                     d=d,
-                    num_epochs = 100,
-                    max_time = 3600,  #1hour
+                    num_epochs = 200,
+                    max_time = 3600*2,  #1hour
+                    use_mixed_precision=True,
                     training_loop_test=training_loop_test,
                     save_results=save_results)
 
