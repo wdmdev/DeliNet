@@ -112,15 +112,22 @@ def finetune_model(cfg: DictConfig):
     if device == "cpu":
       model.float()
 
-    def transform(img):
-        img = img.convert("RGB")
-        img = transforms.Resize((224,224))(img)
-        img = preprocess(img)
+    preprocess = transforms.Compose([
+        transforms.Resize((224,224)),
+        #transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
-        return img
+    # def transform(img):
+    #     img = img.convert("RGB")
+    #     img = transforms.Resize((224,224))(img)
+    #     img = preprocess(img)
+
+    #     return img
 
     dataset = KaggleFoodDataset(csv_file=cfg.data.processed.csv, 
-                                image_dir=cfg.data.processed.img, transform=transform)
+                                image_dir=cfg.data.processed.img, transform=preprocess)
     # Calculate the split sizes
     total_size = len(dataset)
     train_size = int(0.9 * total_size)
@@ -139,12 +146,14 @@ def finetune_model(cfg: DictConfig):
     model = CLIPFineTuned(model, preprocess, cfg)
 
     # Create a PyTorch Lightning trainer and start training with DVC logging
-    logger = DVCLiveLogger(save_dvc_exp=True)
+    experiment = "_".join([cfg.model.name, str(cfg.seed)])
+    logger = DVCLiveLogger(dir=experiment, save_dvc_exp=True)
     checkpoint_callback = ModelCheckpoint(dirpath=cfg.model.save_dir, monitor='train_loss', save_top_k=1, mode='min')
     trainer = L.Trainer(max_epochs=cfg.model.train.epochs, 
                             accelerator="gpu" if torch.cuda.is_available() else "cpu",
                             deterministic=True, logger=logger,
-                            callbacks=[checkpoint_callback])
+                            callbacks=[checkpoint_callback],
+                            log_every_n_steps=1)
     trainer.fit(model, train_loader, val_loader)
 
 if __name__ == '__main__':
