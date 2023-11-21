@@ -12,26 +12,36 @@ def get_top_x_acc(logits:torch.tensor,
                   test_training_loop:bool=False) -> List[float]:
     vision_model.eval()
     text_model.eval()
-
     if test_loader is not None:
         img_embs = []
         text_embs = []
-        for i, (image, text) in enumerate(tqdm.tqdm(test_loader, desc="Test loader")):
+        text_embs2 = []
+        for i, (image, text) in enumerate(tqdm.tqdm(test_loader)):
             img_emb = vision_model(image.to(d))
             text_emb = text_model(text)
             img_embs.append(img_emb)
-            text_embs.append(text_emb)
+            if isinstance(text_emb, list):
+                text_embs.append(text_emb[0])
+                text_embs2.append(text_emb[1])
+            else:
+                text_embs.append(text_emb)
 
             if test_training_loop and i == 2:
                 break
 
         img_embs = torch.cat(img_embs, dim=0)
         text_embs = torch.cat(text_embs, dim=0)
+        if len(text_embs2)>0:
+            text_embs2 = torch.cat(text_embs2, dim=0)
+            text_embs2 = text_embs2 / torch.linalg.norm(text_embs2, axis=1, keepdim=True)
 
         img_embs = img_embs / torch.linalg.norm(img_embs, axis=1, keepdim=True)
         text_embs = text_embs / torch.linalg.norm(text_embs, axis=1, keepdim=True)
 
         logits = (text_embs @ img_embs.T) * text_model.t
+        if len(text_embs2)>0: logits+= (text_embs2 @ img_embs.T) * text_model.t
+
+
 
     n = logits.shape[0]
     accs = []

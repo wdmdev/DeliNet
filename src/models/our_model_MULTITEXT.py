@@ -11,7 +11,7 @@ import os
 import json
 from torch.utils.data import DataLoader
 from src.data.our_kaggle_food_dataset import KaggleFoodDataset
-from src.evaluation.get_top_x_acc import get_top_x_acc
+from src.evaluation.get_top_x_acc_MULTITEXT import get_top_x_acc
 from src.models.model_utils import *
 from src.models.loss_funcs import triplet_loss, contrastive_loss
 from itertools import chain
@@ -87,13 +87,15 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
 
             # mixed precision
             with torch.amp.autocast(enabled=use_mixed_precision, device_type=d, dtype=torch.float16):
-                text_latent = vision_model(images)
-                img_latent = text_model(text)
-
-                text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
+                text_latents = text_model(text)
+                img_latent = vision_model(images)
                 img_latent = img_latent / torch.linalg.norm(img_latent, axis=1, keepdim=True)
-
-                loss = loss_fn(text_latent, img_latent, labels, text_model)
+                loss = torch.tensor([0.0], device=d)
+                if not isinstance(text_latents, list):
+                    text_latents = [text_latents]
+                for text_latent in text_latents:
+                    text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
+                    loss += loss_fn(text_latent, img_latent, labels, text_model)
 
             opt.zero_grad()
             if use_mixed_precision:
@@ -165,8 +167,19 @@ if __name__ == "__main__":
     csv_file_path = os.path.join(food_dir, 'data.csv')
     image_dir = os.path.join(food_dir,'images')
 
+    #torch.set_default_dtype(torch.float16)
+
     d = "cuda"
     vision_model = EfficientTrans_wrapper()
+    #vision_model = ResNet_wrapper(size = "50", pretrained = False)
+    #vision_model = ViT_wrapper()
+    #vision_model = EfficientTrans_wrapper()
+    #vision_model = ResNet_wrapper(size = "50")
+    #vision_model = Efficientnet_wrapper(size=3, d=d)
+    #text_model = Bert_2x_network_wrapper(BertModel_, BertTokenizer_, d=d)
+    #text_model = Bert_2xinput_wrapper(d=d)
+    #text_model = DistilBert_2xNet_test_wrapper(max_length=[32, 200])
+    #text_model = DistilBert_mono_wrapper(pretrained = False)
     text_model = DistilBert_mono_wrapper()
     batch_size = 60
     training_loop_test = False

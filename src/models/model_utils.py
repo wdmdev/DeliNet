@@ -57,12 +57,19 @@ class Efficientnet_wrapper(torch.nn.Module):
         return latent
 
 class ResNet_wrapper(torch.nn.Module):
-    def __init__(self, size="50", latent_dim=768, d="cpu"):
+    def __init__(self, size="50", latent_dim=768, d="cpu", pretrained=True):
         super().__init__()
         self.size = str(size)
         self.d = d
         self.latent_dim = latent_dim
-        self.model = ResNetModel.from_pretrained(f"microsoft/resnet-{self.size}")
+        if pretrained:
+            self.model = ResNetModel.from_pretrained(f"microsoft/resnet-{self.size}")
+        else:
+            assert self.size == "50"
+            print("using non pretrained resnet50")
+            from transformers import ResNetConfig
+            resnet_conf = ResNetConfig()
+            self.model = ResNetModel(resnet_conf)
         self.activation = torch.nn.ReLU()
         self.dropout = torch.nn.Dropout(0.1)
 
@@ -135,12 +142,19 @@ class Bert_mono_wrapper(torch.nn.Module):
         return output
 
 class DistilBert_mono_wrapper(torch.nn.Module):
-    def __init__(self, latent_dim=768, d="cpu", max_length=32):
+    def __init__(self, latent_dim=768, d="cpu", max_length=32, pretrained=True):
         super().__init__()
         self.d = d
         self.max_length = max_length
         self.latent_dim = latent_dim
-        self.BertModel = DistilBertModel.from_pretrained("distilbert-base-uncased")
+        if pretrained:
+            self.BertModel = DistilBertModel.from_pretrained("distilbert-base-uncased")
+        else:
+            print("using non pretrained DistillBert")
+            from transformers import DistilBertConfig
+            configuration = DistilBertConfig()
+            self.BertModel = DistilBertModel(configuration)
+
         self.BertTokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
         self.activation = torch.nn.GELU()
         self.dropout = torch.nn.Dropout(0.1)
@@ -225,6 +239,8 @@ class Bert_2xInp_wrapper(torch.nn.Module):
         out = self.fc(self.activation(cls_token))
 
         return out
+
+
 
 
 
@@ -382,7 +398,7 @@ class DistilBert_2xInp_wrapper(torch.nn.Module):
         return output
 
 class DistilBert_2xNet_wrapper(torch.nn.Module):
-    def __init__(self, latent_dim=768, d="cpu", max_length=32):
+    def __init__(self, latent_dim=768, d="cpu", max_length=[32, 256]):
         super().__init__()
         self.d = d
         self.max_length = max_length
@@ -424,3 +440,47 @@ class DistilBert_2xNet_wrapper(torch.nn.Module):
         output = self.fc2(output)
 
         return output
+
+class DistilBert_2xNet_test_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu", max_length=[32, 256]):
+        super().__init__()
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertModel1 = DistilBertModel.from_pretrained('distilbert-base-uncased')
+        self.BertModel2 = copy.deepcopy(self.BertModel1)
+
+        self.BertTokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
+        # self.activation = torch.nn.GELU()
+        # self.dropout = torch.nn.Dropout(0.1)
+        # self.fc1 = torch.nn.Linear(latent_dim*2, latent_dim*2)
+        # self.fc2 = torch.nn.Linear(latent_dim*2, latent_dim)
+
+        self.t = torch.nn.Parameter(torch.tensor([0.07])) # init value from clip paper
+
+    def forward(self, text):
+        titles, ingres, descr = text
+        titles = self.BertTokenizer(text=titles,
+                                    padding=True,
+                                    truncation=True,
+                                    max_length=self.max_length[0],
+                                    return_tensors="pt").to(self.d)
+
+        ingres = self.BertTokenizer(text=ingres,
+                                         padding=True,
+                                         truncation=True,
+                                         max_length=self.max_length[1],
+                                         return_tensors="pt").to(self.d)
+
+
+        #preprocessed["input_ids"]
+        output1 = self.BertModel1(**titles)[0][:,0,:] # take all batches, first row, all columns
+        output2 = self.BertModel2(**ingres)[0][:,0,:] # take all batches, first row, all columns
+
+        # output = torch.cat((output1, output2), dim=1)
+        # output = self.dropout(self.activation(output))
+        # output = self.fc1(output)
+        # output = self.dropout(self.activation(output))
+        # output = self.fc2(output)
+
+        return [output1, output2]
