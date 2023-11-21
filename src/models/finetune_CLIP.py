@@ -112,22 +112,16 @@ def finetune_model(cfg: DictConfig):
     if device == "cpu":
       model.float()
 
-    preprocess = transforms.Compose([
-        transforms.Resize((224,224)),
-        #transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    
+    def transform(img):
+        img = img.convert("RGB")
+        img = transforms.Resize((224,224))(img)
+        img = preprocess(img)
 
-    # def transform(img):
-    #     img = img.convert("RGB")
-    #     img = transforms.Resize((224,224))(img)
-    #     img = preprocess(img)
-
-    #     return img
+        return img
 
     dataset = KaggleFoodDataset(csv_file=cfg.data.processed.csv, 
-                                image_dir=cfg.data.processed.img, transform=preprocess)
+                                image_dir=cfg.data.processed.img, transform=transform)
     # Calculate the split sizes
     total_size = len(dataset)
     train_size = int(0.9 * total_size)
