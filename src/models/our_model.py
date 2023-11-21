@@ -15,19 +15,23 @@ from src.evaluation.get_top_x_acc import get_top_x_acc
 from src.models.model_utils import *
 from src.models.loss_funcs import triplet_loss, contrastive_loss
 from itertools import chain
+from torchvision.transforms import TrivialAugmentWide
 
 def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn = contrastive_loss,
                     batch_size=40, lr=0.0001, d="cuda", num_epochs = 100, max_time = 10_000,
-                    training_loop_test=False, save_results=False, use_mixed_precision=True):
+                    training_loop_test=False, save_results=False, use_mixed_precision=True,
+                    data_aug = None):
+
     vision_model = vision_model.to(d) # model always starts on CPU and is then moved if needed
     vision_model.d = d
 
     text_model = text_model.to(d) # model always starts on CPU and is then moved if needed
     text_model.d = d
 
-    vision_model_name = vision_model.__class__.__name__[:-8]+vision_model.size
-    text_model_name = text_model.__class__.__name__[:-8]
+    vision_model_name = vision_model._get_name()[:-8]+vision_model.size
+    text_model_name = text_model._get_name()[:-8]
     combined_name = vision_model_name + "_AND_" + text_model_name
+    if data_aug: combined_name += "_" + data_aug._get_name()
 
     if save_results:
         save_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_models", combined_name)
@@ -42,18 +46,23 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
     print(f"{text_model_name}: {text_model_nparams}m params")
     #print(sum([param.numel() for param in vision_model.parameters()])/1e6)
 
-    preprocess = transforms.Compose([
+    augs = [
         transforms.Resize((224,224)),
-        #transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ]
 
-    #batch_size = 2 #200 is max for resnet18, 80 is max for resnet50, 44 is max for ViT
-    food_dataset_train = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
-                                           transform=preprocess, train=True, train_split=0.9)
+    preprocess = transforms.Compose(augs)
     food_dataset_test = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
                                            transform=preprocess, train=False, train_split=0.9)
+
+    if data_aug:
+        augs = [data_aug] + augs
+        preprocess = transforms.Compose(augs)
+
+    food_dataset_train = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
+                                           transform=preprocess, train=True, train_split=0.9)
+
 
     num_workers = 0 if os.name=="nt" else 6 #os.cpu_count()# set num workers to all cores if not windows
     dataloader_train = DataLoader(food_dataset_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -81,19 +90,27 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
 
         vision_model.train()
         text_model.train()
-        for batch_num, (images, text) in enumerate(tqdm.tqdm(dataloader_train, unit="batch", desc=f"Epoch {epoch_num}")):
+        tqdm_dataloader_train = tqdm.tqdm(dataloader_train, unit="batch", desc=f"Epoch {epoch_num}")
+        tqdm_dataloader_train.set_postfix({"t": text_model.t.item()})
+        for batch_num, (images, text) in enumerate(tqdm_dataloader_train):
             labels = torch.arange(images.shape[0], device=d)
             images = images.to(d)
 
             # mixed precision
             with torch.amp.autocast(enabled=use_mixed_precision, device_type=d, dtype=torch.float16):
-                text_latent = vision_model(images)
-                img_latent = text_model(text)
-
-                text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
+                text_latent = text_model(text)
+                img_latent = vision_model(images)
                 img_latent = img_latent / torch.linalg.norm(img_latent, axis=1, keepdim=True)
 
-                loss = loss_fn(text_latent, img_latent, labels, text_model)
+                if isinstance(text_latent, list):
+                    w_s = text_model.w
+                    loss = torch.tensor([0.0], device=d)
+                    for w, text_lat in zip(w_s, text_latent):
+                        text_lat = text_lat / torch.linalg.norm(text_lat, axis=1, keepdim=True)
+                        loss += w * loss_fn(text_lat, img_latent, labels, text_model)
+                else:
+                    text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
+                    loss = loss_fn(text_latent, img_latent, labels, text_model)
 
             opt.zero_grad()
             if use_mixed_precision:
@@ -126,7 +143,9 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
         losses_numpy = torch.stack(losses).cpu().numpy()
         plt.plot(losses_numpy/losses_numpy.max(), label="train loss (normalized)")
         plt.legend()
-        plt.title(f"(epoch {epoch_num+1} batch size {batch_size}) \n {vision_model_name} & {text_model_name}")
+        data_aug_str = ", " + data_aug._get_name() if data_aug else ""
+        plt.title(f"(epoch {epoch_num+1}, batch size {batch_size}{data_aug_str})"
+                  f" \n {vision_model_name} & {text_model_name}")
         plt.xlabel("steps")
         plt.ylabel("acc/ normalized loss")
         plt.tight_layout()
@@ -167,8 +186,9 @@ if __name__ == "__main__":
 
     d = "cuda"
     vision_model = EfficientTrans_wrapper()
-    text_model = DistilBert_mono_wrapper()
-    batch_size = 60
+    text_model = DistilBert_3xNet3xOutWCons_wrapper()
+    data_aug = TrivialAugmentWide()
+    batch_size = 20
     training_loop_test = False
     save_results = True
     train_our_model(csv_file_path,
@@ -178,6 +198,7 @@ if __name__ == "__main__":
                     batch_size=batch_size,
                     lr=0.0001,
                     d=d,
+                    data_aug= data_aug,
                     num_epochs = 200,
                     max_time = 3600*2,  #2hour
                     use_mixed_precision=True,
