@@ -52,7 +52,7 @@ if __name__ == "__main__":
                       batch_size=50,
                       lr=0.0001,
                       d=d,
-                      num_epochs=50,
+                      num_epochs=100,
                       use_mixed_precision=True,
                       data_aug=aug,
                       max_time=3600 * 3,  # 1hour max
