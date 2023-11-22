@@ -185,10 +185,11 @@ if __name__ == "__main__":
     image_dir = os.path.join(food_dir,'images')
 
     d = "cuda"
-    vision_model = EfficientTrans_wrapper()
-    text_model = DistilBert_3xNet3xOutWCons_wrapper()
-    data_aug = TrivialAugmentWide()
-    batch_size = 20
+    vision_model = ConvNext_wrapper()
+    #vision_model = Swin_Transformer_wrapper()
+    text_model = DistilBert_mono_wrapper()
+    data_aug = None
+    batch_size = 25
     training_loop_test = False
     save_results = True
     train_our_model(csv_file_path,

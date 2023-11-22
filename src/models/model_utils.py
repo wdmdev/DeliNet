@@ -3,7 +3,8 @@ import copy
 from transformers import (DistilBertTokenizerFast, DistilBertModel,
                           ResNetModel, ViTModel, EfficientNetModel,
                           EfficientFormerForImageClassification,
-                          BertModel, BertTokenizerFast)
+                          BertModel, BertTokenizerFast, AutoModelForImageClassification,
+                          ConvNextV2Model, ConvNextForImageClassification)
 
 from peft import LoraConfig, get_peft_model
 
@@ -27,7 +28,89 @@ class EfficientTrans_wrapper(torch.nn.Module):
         latent = self.activation(latent)
         latent = self.fc(latent)
 
+
         return latent
+
+class Swin_Transformer_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu"):
+        super().__init__()
+        self.size = ""
+        self.d = d
+        self.latent_dim = latent_dim
+        self.model = AutoModelForImageClassification.from_pretrained("microsoft/swin-tiny-patch4-window7-224")
+        self.activation = torch.nn.GELU()
+        self.fc = torch.nn.Linear(1000, latent_dim)
+
+        self.dropout = torch.nn.Dropout(0.1)
+
+    def forward(self, images):
+        latent = self.model(images)
+        #latent = output.latent
+        latent = latent.logits
+        latent = self.dropout(latent)
+        latent = self.activation(latent)
+        latent = self.fc(latent)
+
+        return latent
+
+class ConvNextTiny_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu", classification=False):
+        super().__init__()
+        self.size = ""
+        self.classification = classification
+        self.d = d
+        self.latent_dim = latent_dim
+        #self.model = ConvNextV2Model.from_pretrained("facebook/convnextv2-base-22k-224")
+        self.model = ConvNextForImageClassification.from_pretrained("facebook/convnext-tiny-224")
+
+        self.id2label = self.model.config.id2label
+        self.activation = torch.nn.GELU()
+        self.fc = torch.nn.Linear(1000, latent_dim)
+
+        self.dropout = torch.nn.Dropout(0.1)
+
+    def forward(self, images):
+        latent = self.model(images)
+        #latent = output.latent
+        latent = latent.logits
+        if self.classification:
+            return latent
+
+        latent = self.dropout(latent)
+        latent = self.activation(latent)
+        latent = self.fc(latent)
+
+        return latent
+
+class ConvNext_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu", classification=False):
+        super().__init__()
+        self.size = ""
+        self.classification = classification
+        self.d = d
+        self.latent_dim = latent_dim
+        #self.model = ConvNextV2Model.from_pretrained("facebook/convnextv2-base-22k-224")
+        self.model = ConvNextForImageClassification.from_pretrained("facebook/convnext-base-224-22k")
+
+        self.id2label = self.model.config.id2label
+        self.activation = torch.nn.GELU()
+        self.fc = torch.nn.Linear(21_841, latent_dim)
+
+        self.dropout = torch.nn.Dropout(0.1)
+
+    def forward(self, images):
+        latent = self.model(images)
+        #latent = output.latent
+        latent = latent.logits
+        if self.classification:
+            return latent
+
+        latent = self.dropout(latent)
+        latent = self.activation(latent)
+        latent = self.fc(latent)
+
+        return latent
+
 
 class EfficientTransNonPre_wrapper(torch.nn.Module):
     def __init__(self, latent_dim=768, d="cpu"):
@@ -145,7 +228,9 @@ class ViT_wrapper(torch.nn.Module):
         self.size = ""
         self.d = d
         self.latent_dim = latent_dim
-        self.model = ViTModel.from_pretrained("facebook/vit-mae-base")
+        #self.model = ViTModel.from_pretrained("facebook/vit-mae-base")
+
+        self.model = ViTModel.from_pretrained("google/vit-base-patch16-224-in21k")
         self.activation = torch.nn.GELU()
         self.fc = torch.nn.Linear(latent_dim, latent_dim)
         self.dropout = torch.nn.Dropout(0.1)
@@ -153,7 +238,7 @@ class ViT_wrapper(torch.nn.Module):
     def forward(self, images):
         latent = self.model(images)
         #latent = output.latent
-        latent = latent.pooler_output
+        latent = latent[0][:,0,:]
         latent = self.dropout(latent)
         latent = self.activation(latent)
         latent = self.fc(latent)
@@ -205,6 +290,43 @@ class DistilBert_mono_wrapper(torch.nn.Module):
 
     def forward(self, text):
         titles, _, _ = text
+        preprocessed = self.BertTokenizer(text=titles,
+                                          padding=True,
+                                          truncation=True,
+                                          max_length=self.max_length,
+                                          return_tensors="pt").to(self.d)
+
+        output = self.BertModel(**preprocessed)
+        output = output[0][:,0,:]
+        output = self.dropout(output)
+        output = self.fc(self.activation(output))
+
+        return output
+
+class DistilBert_monoTextAug_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu", max_length=32):
+        super().__init__()
+        from niacin.augment import RandAugment
+        from niacin.text import en
+        self.aug = RandAugment([en.add_hyponyms, en.add_hypernyms, en.add_synonyms], n=1, m=100)
+        self.d = d
+        self.max_length = max_length
+        self.latent_dim = latent_dim
+        self.BertTokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
+        self.activation = torch.nn.GELU()
+        self.dropout = torch.nn.Dropout(0.1)
+        self.fc = torch.nn.Linear(latent_dim, latent_dim)
+        self.t = torch.nn.Parameter(torch.tensor([0.07]))  # init value from clip paper
+        self.BertModel = DistilBertModel.from_pretrained("distilbert-base-uncased")
+
+
+    def forward(self, text):
+        titles, _, _ = text
+        print(titles[:3])
+        if self.training:
+            titles = [next(iter(self.aug))(title) for title in titles]
+        print(titles[:3])
+
         preprocessed = self.BertTokenizer(text=titles,
                                           padding=True,
                                           truncation=True,
