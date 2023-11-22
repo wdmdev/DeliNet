@@ -480,7 +480,7 @@ class Bert_2xNet_wrapper(torch.nn.Module):
         return out
 
 class DistilBert_3xNet_wrapper(torch.nn.Module):
-    def __init__(self, latent_dim=768, d="cpu", max_length=16):
+    def __init__(self, latent_dim=768, d="cpu", max_length=[32, 256, 256]):
         super().__init__()
         self.d = d
         self.max_length = max_length
