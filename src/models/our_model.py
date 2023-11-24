@@ -44,7 +44,7 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
     text_model_nparams = int(sum([param.numel() for param in text_model.parameters()]) / 1e6)
     print(f"{vision_model_name}: {vision_model_nparams}m params")
     print(f"{text_model_name}: {text_model_nparams}m params")
-    #print(sum([param.numel() for param in vision_model.parameters()])/1e6)
+
 
     augs = [
         transforms.Resize((224,224)),
@@ -63,6 +63,14 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
     food_dataset_train = KaggleFoodDataset(csv_file=csv_file_path, image_dir=image_dir,
                                            transform=preprocess, train=True, train_split=0.9)
 
+    # # just messing about
+    # from fvcore.nn import FlopCountAnalysis
+    # flops = FlopCountAnalysis(vision_model, food_dataset_train[0][0][None,:].to(d))
+    # print(f"tot Gflop vision model: {int(flops.total()/1e9)}")
+    # text_model([food_dataset_train[0][1]])
+    # flops = FlopCountAnalysis(text_model, [food_dataset_train[0][1]])
+    # print(f"tot Gflop text model: {(flops.total()/1e9):.5f}")
+    #
 
     num_workers = 0 if os.name=="nt" else 6 #os.cpu_count()# set num workers to all cores if not windows
     dataloader_train = DataLoader(food_dataset_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -189,7 +197,7 @@ if __name__ == "__main__":
     #vision_model = Swin_Transformer_wrapper()
     text_model = DistilBert_mono_wrapper()
     data_aug = None
-    batch_size = 25
+    batch_size = 10
     training_loop_test = False
     save_results = True
     train_our_model(csv_file_path,
