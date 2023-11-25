@@ -185,9 +185,8 @@ if __name__ == "__main__":
     image_dir = os.path.join(food_dir,'images')
 
     d = "cuda"
-    vision_model = ConvNext_wrapper()
-    #vision_model = Swin_Transformer_wrapper()
-    text_model = DistilBert_mono_wrapper()
+    vision_model = CLIP_vision_wrapper()
+    text_model = CLIP_text_wrapper()
     data_aug = None
     batch_size = 25
     training_loop_test = False

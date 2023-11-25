@@ -4,9 +4,49 @@ from transformers import (DistilBertTokenizerFast, DistilBertModel,
                           ResNetModel, ViTModel, EfficientNetModel,
                           EfficientFormerForImageClassification,
                           BertModel, BertTokenizerFast, AutoModelForImageClassification,
-                          ConvNextV2Model, ConvNextForImageClassification)
+                          ConvNextV2Model, ConvNextForImageClassification, CLIPModel, CLIPProcessor)
 
 from peft import LoraConfig, get_peft_model
+
+class CLIP_vision_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu"):
+        super().__init__()
+        self.size = ""
+        self.d = d
+        self.latent_dim = latent_dim
+        self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.out_proj = self.model.visual_projection
+        self.model = self.model.vision_model
+
+        self.dropout = torch.nn.Dropout(0.1)
+
+    def forward(self, images):
+        latent = self.model(images).pooler_output
+        latent = self.out_proj(latent)
+
+        return latent
+
+class CLIP_text_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu"):
+        super().__init__()
+        self.size = ""
+        self.d = d
+        self.latent_dim = latent_dim
+        self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.out_proj = self.model.text_projection
+        self.t = self.model.logit_scale
+
+        self.model = self.model.text_model
+        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+
+    def forward(self, text):
+        titles, ingre, desc = text
+        titles_emb = self.processor(text=titles, return_tensors="pt", padding=True)
+        latent = self.model(**titles_emb).pooler_output
+        latent = self.out_proj(latent)
+
+        return latent
 
 class EfficientTrans_wrapper(torch.nn.Module):
     def __init__(self, latent_dim=768, d="cpu"):
