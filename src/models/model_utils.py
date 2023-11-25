@@ -15,15 +15,13 @@ class CLIP_vision_wrapper(torch.nn.Module):
         self.d = d
         self.latent_dim = latent_dim
         self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+
         self.out_proj = self.model.visual_projection
         self.model = self.model.vision_model
-
-        self.dropout = torch.nn.Dropout(0.1)
 
     def forward(self, images):
         latent = self.model(images).pooler_output
         latent = self.out_proj(latent)
-
         return latent
 
 class CLIP_text_wrapper(torch.nn.Module):
@@ -39,13 +37,11 @@ class CLIP_text_wrapper(torch.nn.Module):
         self.model = self.model.text_model
         self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-
     def forward(self, text):
         titles, ingre, desc = text
         titles_emb = self.processor(text=titles, return_tensors="pt", padding=True)
         latent = self.model(**titles_emb).pooler_output
         latent = self.out_proj(latent)
-
         return latent
 
 class EfficientTrans_wrapper(torch.nn.Module):
