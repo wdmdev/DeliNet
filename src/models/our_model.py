@@ -15,7 +15,7 @@ from src.evaluation.get_top_x_acc import get_top_x_acc
 from src.models.model_utils import *
 from src.models.loss_funcs import triplet_loss, contrastive_loss
 from itertools import chain
-from torchvision.transforms import TrivialAugmentWide
+from torchvision.transforms import TrivialAugmentWide, RandAugment
 
 def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn = contrastive_loss,
                     batch_size=40, lr=0.0001, d="cuda", num_epochs = 100, max_time = 10_000,
@@ -80,6 +80,15 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
     #loss_fn = torch.nn.CrossEntropyLoss()
     lr = lr * (batch_size / 100) # 0.00003 for Vit (since smaller batchsize) 0.0001 for resnet
     combined_params = chain(vision_model.parameters(), text_model.parameters())
+    # combined_params = [{'params': vision_model.parameters(), "lr": lr},
+    #
+    #                    {'params': text_model.model.parameters(), "lr": lr},
+    #                    {'params': text_model.model2.parameters(), "lr": lr},
+    #                    {'params': text_model.out_proj.parameters(), "lr": lr},
+    #                    {'params': text_model.out_proj2.parameters(), "lr": lr},
+    #                    {'params': text_model.fc.parameters(), "lr": 0.001}
+    #                    ]
+
     opt = torch.optim.AdamW(lr=lr, params=combined_params)
     lr_scheduler = torch.optim.lr_scheduler.LinearLR(opt, start_factor=1.0, end_factor=0.01, total_iters=50)
     AMP_scaler = torch.cuda.amp.GradScaler()
@@ -110,15 +119,8 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
                 img_latent = vision_model(images)
                 img_latent = img_latent / torch.linalg.norm(img_latent, axis=1, keepdim=True)
 
-                if isinstance(text_latent, list):
-                    w_s = text_model.w
-                    loss = torch.tensor([0.0], device=d)
-                    for w, text_lat in zip(w_s, text_latent):
-                        text_lat = text_lat / torch.linalg.norm(text_lat, axis=1, keepdim=True)
-                        loss += w * loss_fn(text_lat, img_latent, labels, text_model)
-                else:
-                    text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
-                    loss = loss_fn(text_latent, img_latent, labels, text_model)
+                text_latent = text_latent / torch.linalg.norm(text_latent, axis=1, keepdim=True)
+                loss = loss_fn(text_latent, img_latent, labels, text_model)
 
             opt.zero_grad()
             if use_mixed_precision:
@@ -182,6 +184,8 @@ def train_our_model(csv_file_path, image_dir, vision_model, text_model, loss_fn 
         plt.close('all')
         if training_loop_test:
             print(f"Peak memory usage: {torch.cuda.max_memory_allocated()/ 1e9:.1f}GB")
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
             print("Test complete - exiting test training!")
             break
 
@@ -194,9 +198,9 @@ if __name__ == "__main__":
 
     d = "cuda"
     vision_model = CLIP_vision_wrapper()
-    text_model = CLIP_text_wrapper()
-    data_aug = None
-    batch_size = 10
+    text_model = CLIP_text2xinp_wrapper()
+    data_aug = TrivialAugmentWide()
+    batch_size = 100
     training_loop_test = False
     save_results = True
     train_our_model(csv_file_path,
@@ -204,10 +208,10 @@ if __name__ == "__main__":
                     vision_model,
                     text_model,
                     batch_size=batch_size,
-                    lr=0.0001,
+                    lr=0.000001,
                     d=d,
                     data_aug= data_aug,
-                    num_epochs = 200,
+                    num_epochs = 10,
                     max_time = 3600*2,  #2hour
                     use_mixed_precision=True,
                     training_loop_test=training_loop_test,

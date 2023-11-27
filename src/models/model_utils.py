@@ -8,6 +8,7 @@ from transformers import (DistilBertTokenizerFast, DistilBertModel,
 
 from peft import LoraConfig, get_peft_model
 
+
 class CLIP_vision_wrapper(torch.nn.Module):
     def __init__(self, latent_dim=768, d="cpu"):
         super().__init__()
@@ -24,6 +25,9 @@ class CLIP_vision_wrapper(torch.nn.Module):
         latent = self.out_proj(latent)
         return latent
 
+#(0, 0.29175946547884185) (0.1, 0.9450631031922792) (0.25, 0.9844097995545656)
+# (0, 0.2902746844840386) (0.1, 0.9502598366740905) (0.25, 0.9821826280623608)
+# 0, 0.2962138084632517) (0.1, 0.9539717891610987) (0.25, 0.9844097995545656)
 class CLIP_text_wrapper(torch.nn.Module):
     def __init__(self, latent_dim=768, d="cpu"):
         super().__init__()
@@ -39,10 +43,69 @@ class CLIP_text_wrapper(torch.nn.Module):
 
     def forward(self, text):
         titles, ingre, desc = text
-        titles_emb = self.processor(text=titles, return_tensors="pt", padding=True)
+        titles_emb = self.processor(text=titles, return_tensors="pt", padding=True).to(self.d)
         latent = self.model(**titles_emb).pooler_output
         latent = self.out_proj(latent)
         return latent
+
+#(0, 0.2962138084632517) (0.1, 0.961395694135115) (0.25, 0.9866369710467705)
+class CLIP_text2xinp_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu"):
+        super().__init__()
+        self.size = ""
+        self.d = d
+        self.latent_dim = latent_dim
+        self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.out_proj = self.model.text_projection
+        self.t = self.model.logit_scale
+
+        self.model = self.model.text_model
+        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+    def forward(self, text):
+        titles, ingre, desc = text
+        combined = [tit + ". " + ing for tit, ing in zip(titles, ingre)]
+        titles_emb = self.processor(text=combined, return_tensors="pt", padding=True, truncation=True).to(self.d)
+        latent = self.model(**titles_emb).pooler_output
+        latent = self.out_proj(latent)
+        return latent
+
+class CLIP_text2xNet_wrapper(torch.nn.Module):
+    def __init__(self, latent_dim=768, d="cpu"):
+        super().__init__()
+        self.size = ""
+        self.d = d
+        self.latent_dim = latent_dim
+        self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.out_proj = self.model.text_projection
+        self.t = self.model.logit_scale
+        self.model = self.model.text_model
+
+        self.model2 = copy.deepcopy(self.model)
+        self.out_proj2 = copy.deepcopy(self.out_proj)
+
+        self.fc = torch.nn.Linear(in_features=512*2, out_features=512)
+        self.acti = torch.nn.GELU()
+        self.dropout = torch.nn.Dropout(0.1)
+
+        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+    def forward(self, text):
+        titles, ingre, desc = text
+        titles_tokens = self.processor(text=titles, return_tensors="pt", padding=True, truncation=True).to(self.d)
+        latent1 = self.model(**titles_tokens).pooler_output
+        latent1 = self.out_proj(latent1)
+
+        ingre_tokens = self.processor(text=ingre, return_tensors="pt", padding=True, truncation=True).to(self.d)
+        latent2 = self.model2(**ingre_tokens).pooler_output
+        latent2 = self.out_proj2(latent2)
+
+        latent = torch.cat([latent1, latent2], dim=1)
+        latent = self.dropout(self.acti(latent))
+        latent = self.fc(latent)
+        return latent
+
+        #return latent1 + latent2
 
 class EfficientTrans_wrapper(torch.nn.Module):
     def __init__(self, latent_dim=768, d="cpu"):
